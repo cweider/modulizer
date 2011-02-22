@@ -1,0 +1,7 @@
+#!/bin/bash
+
+../modulizer.js --root-path root --library-path lib --import-libraries --import-root --include-kernel -- ext > out.js
+echo "require('/main');" >> out.js
+cat out.js
+echo "----------------------------"
+node out.js
