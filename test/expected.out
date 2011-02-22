@@ -1,0 +1,33 @@
+MODULE RUN: UTIL
+MODULE RUN: CONTROL
+MODULE RUN: BUTTON
+MODULE RUN: SPECIAL BUTTON
+Button is:
+{ button1: 'button1',
+  button2: 'button2',
+  Control: 
+   { i_am_a_control: true,
+     utils: 
+      { escapeHTML: [Function],
+        escapeHTMLAttribute: [Function],
+        importantURL: 'http://example.com/' } } }
+SpecialButton is:
+{ Button: 
+   { button1: 'button1',
+     button2: 'button2',
+     Control: { i_am_a_control: true, utils: [Object] } },
+  Control: 
+   { i_am_a_control: true,
+     utils: 
+      { escapeHTML: [Function],
+        escapeHTMLAttribute: [Function],
+        importantURL: 'http://example.com/' } },
+  Util: 
+   { escapeHTML: [Function],
+     escapeHTMLAttribute: [Function],
+     importantURL: 'http://example.com/' } }
+Util is:
+{ escapeHTML: [Function],
+  escapeHTMLAttribute: [Function],
+  importantURL: 'http://example.com/' }
+{}
