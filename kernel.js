@@ -1,7 +1,9 @@
 var require = (typeof require != 'undefined') && require.install ? require : (function () {
+  /* Storage */
   var modules = {};
   var main = null;
 
+  /* Paths */
   var normalizePath = function (path) {
     var pathComponents1 = path.split('/');
     var pathComponents2 = [];
@@ -40,6 +42,7 @@ var require = (typeof require != 'undefined') && require.install ? require : (fu
     return topLevelPath;
   };
 
+  /* Modules */
   var moduleAtPath = function (topLevelPath) {
     var suffixes = ['', '.js', '/index.js'];
     for (var i = 0, ii = suffixes.length; i < ii; i++) {
@@ -64,38 +67,53 @@ var require = (typeof require != 'undefined') && require.install ? require : (fu
     return null;
   };
 
+  /* Installation */
+  var installModule = function (topLevelPath, module) {
+    if (typeof topLevelPath != 'string' || typeof module != 'function') {
+      throw new Error("Argument error: install must be given a (string, function) pair.");
+    }
+
+    if (moduleAtPath(topLevelPath)) {
+      // Drop import silently
+    } else {
+      modules[topLevelPath] = module;
+    }
+  };
+  var installModules = function (moduleMap) {
+    if (typeof moduleMap != 'object') {
+      throw new Error("Argument error: install must be given a object.");
+    }
+    for (var topLevelPath in moduleMap) {
+      if (Object.prototype.hasOwnProperty.call(moduleMap, topLevelPath)) {
+        _install(topLevelPath, moduleMap[topLevelPath]);
+      }
+    }
+  };
+  var installMulti = function (topLevelPathOrModuleMap, module) {
+    if (arguments.length == 1) {
+      installModules(topLevelPathOrModuleMap);
+    } else if (arguments.length == 2) {
+      installModule(topLevelPathOrModuleMap, module);
+    } else {
+      throw new Error("Argument error: expected 1 or 2 got " + arguments.length + ".");
+    }
+  };
+
+  /* Require */
+  var require = function (topLevelPath) {
+    var module = moduleAtPath(topLevelPath);
+    if (!module) {
+      throw new Error("The module at \"" + topLevelPath + "\" does not exist.");
+    }
+    return module.exports;
+  }
+
   var requireRelativeTo = function (relativePath) {
     var _require = function (path) {
       var topLevelPath = normalizePath(rootedPath(path, relativePath));
-      var module = moduleAtPath(topLevelPath);
-      if (!module) {
-        throw new Error("The module at \"" + topLevelPath + "\" does not exist.");
-      }
-      return module.exports;
+      return require(topLevelPath);
     };
-    var _install = function (topLevelPath, module) {
-      if (typeof topLevelPath != 'string' || typeof module != 'function') {
-        throw new Error("Argument error: install must be given a string function pair.");
-      }
-
-      if (moduleAtPath(topLevelPath)) {
-        // Drop import silently
-      } else {
-        modules[topLevelPath] = module;
-      }
-    };
-    _require.install = function (topLevelPathOrModuleMap, module) {
-      if (typeof topLevelPathOrModuleMap == 'object') {
-        var moduleMap = topLevelPathOrModuleMap;
-        for (var topLevelPath in moduleMap) {
-          if (Object.prototype.hasOwnProperty.call(moduleMap, topLevelPath)) {
-            _install(topLevelPath, moduleMap[topLevelPath]);
-          }
-        }
-      } else {
-        _install(topLevelPathOrModuleMap, module);
-      }
-    };
+    _require.install = installMulti;
     _require._modules = modules;
     _require.main = main;
 
