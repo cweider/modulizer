@@ -57,7 +57,7 @@ var require = (typeof require != 'undefined') && require.install ? require : (fu
           if (!main) {
             main = _module;
           }
-          modules[topLevelPath] = _module;
+          modules[path] = _module;
           module(requireRelativeTo(path.replace(/[^\/]+$/,'')), _module.exports, _module);
           module = _module;
         }
