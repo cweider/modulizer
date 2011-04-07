@@ -9,7 +9,7 @@ var require =
   var libraryURI = undefined;
 
   /* Paths */
-  var normalizePath = function (path) {
+  function normalizePath(path) {
     var pathComponents1 = path.split('/');
     var pathComponents2 = [];
     if (path.charAt(0) == '/') {
@@ -55,18 +55,18 @@ var require =
     return fullyQualifiedPath;
   };
 
-  var setRootURI = function (URI) {
+  function setRootURI(URI) {
     if (!URI) {
       throw new Error("Argument Error: invalid root URI.");
     }
     rootURI = (URI.charAt(URI.length-1) == '/' ? URI.slice(0,-1) : URI);
   };
 
-  var setLibraryURI = function (URI) {
+  function setLibraryURI(URI) {
     libraryURI = (URI.charAt(URI.length-1) == '/' ? URI : URI + '/');
   };
 
-  var URIForModulePath = function (path) {
+  function URIForModulePath(path) {
     if (path.charAt(0) == '/') {
       return rootURI + path;
     } else {
@@ -86,7 +86,7 @@ var require =
     function () {return new ActiveXObject("Microsoft.XMLHTTP")}
   ];
 
-  var createXMLHTTPObject = function () {
+  function createXMLHTTPObject() {
     var xmlhttp = false;
     for (var i = 0, ii = XMLHttpFactories.length; i < ii; i++) {
       try {
@@ -100,7 +100,7 @@ var require =
   };
 
   /* Modules */
-  var fetchModuleSync = function (path) {
+  function fetchModuleSync(path) {
     var request = createXMLHTTPObject();
     if (!request) {
       throw new Error("Error making remote request.")
@@ -120,7 +120,7 @@ var require =
     }
   };
 
-  var loadModule = function (path) {
+  function loadModule(path) {
     var module = modules[path];
     // If it's a function then it hasn't been exported yet. Run function and
     //  then replace with exports result.
@@ -141,7 +141,7 @@ var require =
     return module;
   };
 
-  var moduleAtPath = function (path) {
+  function moduleAtPath(path) {
     var suffixes = ['', '.js', '/index.js'];
     for (var i = 0, ii = suffixes.length; i < ii; i++) {
       var path_ = path + suffixes[i];
@@ -158,7 +158,7 @@ var require =
   };
 
   /* Installation */
-  var installModule = function (path, module) {
+  function installModule(path, module) {
     if (typeof path != 'string'
       || !((module instanceof Function) || module === null)) {
       throw new Error(
@@ -172,7 +172,7 @@ var require =
     }
   };
 
-  var installModules = function (moduleMap) {
+  function installModules(moduleMap) {
     if (typeof moduleMap != 'object') {
       throw new Error("Argument error: install must be given a object.");
     }
@@ -183,7 +183,7 @@ var require =
     }
   };
 
-  var installMulti = function (fullyQualifiedPathOrModuleMap, module) {
+  function installMulti(fullyQualifiedPathOrModuleMap, module) {
     if (arguments.length == 1) {
       installModules(fullyQualifiedPathOrModuleMap);
     } else if (arguments.length == 2) {
@@ -195,7 +195,7 @@ var require =
   };
 
   /* Require */
-  var require = function (path) {
+  function requireBase(path) {
     var module = moduleAtPath(path);
     if (!module) {
       throw new Error("The module at \"" + path + "\" does not exist.");
@@ -204,13 +204,13 @@ var require =
   };
 
   var requireRelativeTo = function (basePath) {
-    var _require = function (qualifiedPath) {
+    function require(qualifiedPath) {
       var path = normalizePath(fullyQualifyPath(qualifiedPath, basePath));
-      return require(path);
+      return requireBase(path);
     };
-    _require.main = main;
+    require.main = main;
 
-    return _require;
+    return require;
   };
 
   var rootRequire = requireRelativeTo('/');
