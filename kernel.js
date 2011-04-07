@@ -1,7 +1,9 @@
-var require = (typeof require != 'undefined') && require.install ? require : (function () {
+var require =
+  (typeof require != 'undefined') && require.install ? require :(function () {
   /* Storage */
-  var modules = {};
   var main = null;
+  var modules = {};
+  var loadingModules = {};
 
   /* Paths */
   var normalizePath = function (path) {
@@ -34,91 +36,126 @@ var require = (typeof require != 'undefined') && require.install ? require : (fu
     return pathComponents2.join('/');
   };
 
-  var rootedPath = function (path, relativePath) {
-    var topLevelPath = path;
-    if (path.charAt(0) == '.' && (path.charAt(1) == '/' || (path.charAt(1) == '.' && path.charAt(2) == '/'))) {
-       topLevelPath = (relativePath || '/') + path;
+  var fullyQualifyPath = function (path, basePath) {
+    var fullyQualifiedPath = path;
+    if (path.charAt(0) == '.'
+      && (path.charAt(1) == '/'
+        || (path.charAt(1) == '.'
+          && path.charAt(2) == '/'))) {
+      if (!basePath) {
+        basePath = '/';
+      } else if (basePath.charAt(basePath.length-1) != '/') {
+        basePath += '/';
+      }
+      fullyQualifiedPath = basePath + path;
     }
-    return topLevelPath;
+    return fullyQualifiedPath;
+  };
+
+  var URIForModulePath = function (path) {
+    if (path.charAt(0) == '/') {
+      return rootURI + path;
+    } else {
+      if (!libraryURI) {
+        throw new Error("Attempt to retrieve the library module"
+          + "\""+ path + "\" but no libaryURI is defined.");
+      }
+      return libraryURI + path;
+    }
   };
 
   /* Modules */
-  var moduleAtPath = function (topLevelPath) {
+  var loadModule = function (path) {
+    var module = modules[path];
+    // If it's a function then it hasn't been exported yet. Run function and
+    //  then replace with exports result.
+    if (module instanceof Function) {
+      if (Object.prototype.hasOwnProperty(loadingModules, path)) {
+        throw new Error("Encountered circurlar dependency.");
+      }
+      var _module = {id: path, exports: {}};
+      var _require = requireRelativeTo(path.replace(/[^\/]+$/,''));
+      if (!main) {
+        main = _module;
+      }
+      loadingModules[path] = true;
+      module(_require, _module.exports, _module);
+      module = modules[path] = _module;
+      delete loadingModules[path];
+    }
+    return module;
+  };
+
+  var moduleAtPath = function (path) {
     var suffixes = ['', '.js', '/index.js'];
     for (var i = 0, ii = suffixes.length; i < ii; i++) {
-      var suffix = suffixes[i];
-      var path = topLevelPath + suffix;
-      var module = Object.prototype.hasOwnProperty.call(modules, path) && modules[path];
+      var path_ = path + suffixes[i];
+      var module = loadModule(path_);
       if (module) {
-        // If it's a function then it hasn't been exported yet. Run function and
-        //  then replace with exports result.
-        if (module instanceof Function) {
-          var _module = {id: topLevelPath, exports: {}};
-          if (!main) {
-            main = _module;
-          }
-          modules[path] = _module;
-          module(requireRelativeTo(path.replace(/[^\/]+$/,'')), _module.exports, _module);
-          module = _module;
-        }
         return module;
       }
     }
-    return null;
+    return undefined;
   };
 
   /* Installation */
-  var installModule = function (topLevelPath, module) {
-    if (typeof topLevelPath != 'string' || typeof module != 'function') {
-      throw new Error("Argument error: install must be given a (string, function) pair.");
+  var installModule = function (path, module) {
+    if (typeof path != 'string'
+      || !((module instanceof Function) || module === null)) {
+      throw new Error(
+          "Argument error: install must be given a (string, function) pair.");
     }
 
-    if (moduleAtPath(topLevelPath)) {
+    if (Object.prototype.hasOwnProperty.call(modules, path)) {
       // Drop import silently
     } else {
-      modules[topLevelPath] = module;
+      modules[path] = module;
     }
   };
+
   var installModules = function (moduleMap) {
     if (typeof moduleMap != 'object') {
       throw new Error("Argument error: install must be given a object.");
     }
-    for (var topLevelPath in moduleMap) {
-      if (Object.prototype.hasOwnProperty.call(moduleMap, topLevelPath)) {
-        _install(topLevelPath, moduleMap[topLevelPath]);
+    for (var path in moduleMap) {
+      if (Object.prototype.hasOwnProperty.call(moduleMap, path)) {
+        installModule(path, moduleMap[path]);
       }
     }
   };
-  var installMulti = function (topLevelPathOrModuleMap, module) {
+
+  var installMulti = function (fullyQualifiedPathOrModuleMap, module) {
     if (arguments.length == 1) {
-      installModules(topLevelPathOrModuleMap);
+      installModules(fullyQualifiedPathOrModuleMap);
     } else if (arguments.length == 2) {
-      installModule(topLevelPathOrModuleMap, module);
+      installModule(fullyQualifiedPathOrModuleMap, module);
     } else {
-      throw new Error("Argument error: expected 1 or 2 got " + arguments.length + ".");
+      throw new Error("Argument error: expected 1 or 2 got "
+          + arguments.length + ".");
     }
   };
 
   /* Require */
-  var require = function (topLevelPath) {
-    var module = moduleAtPath(topLevelPath);
+  var require = function (path) {
+    var module = moduleAtPath(path);
     if (!module) {
-      throw new Error("The module at \"" + topLevelPath + "\" does not exist.");
+      throw new Error("The module at \"" + path + "\" does not exist.");
     }
     return module.exports;
-  }
+  };
 
-  var requireRelativeTo = function (relativePath) {
-    var _require = function (path) {
-      var topLevelPath = normalizePath(rootedPath(path, relativePath));
-      return require(topLevelPath);
+  var requireRelativeTo = function (basePath) {
+    var _require = function (qualifiedPath) {
+      var path = normalizePath(fullyQualifyPath(qualifiedPath, basePath));
+      return require(path);
     };
-    _require.install = installMulti;
-    _require._modules = modules;
     _require.main = main;
 
     return _require;
   };
 
-  return requireRelativeTo('/');
+  var rootRequire = requireRelativeTo('/');
+  rootRequire._modules = modules;
+  rootRequire.install = installMulti;
+  return rootRequire;
 })();
