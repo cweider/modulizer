@@ -5,6 +5,9 @@ var require =
   var modules = {};
   var loadingModules = {};
 
+  var rootURI = '/';
+  var libraryURI = undefined;
+
   /* Paths */
   var normalizePath = function (path) {
     var pathComponents1 = path.split('/');
@@ -52,19 +55,71 @@ var require =
     return fullyQualifiedPath;
   };
 
+  var setRootURI = function (URI) {
+    if (!URI) {
+      throw new Error("Argument Error: invalid root URI.");
+    }
+    rootURI = (URI.charAt(URI.length-1) == '/' ? URI.slice(0,-1) : URI);
+  };
+
+  var setLibraryURI = function (URI) {
+    libraryURI = (URI.charAt(URI.length-1) == '/' ? URI : URI + '/');
+  };
+
   var URIForModulePath = function (path) {
     if (path.charAt(0) == '/') {
       return rootURI + path;
     } else {
       if (!libraryURI) {
-        throw new Error("Attempt to retrieve the library module"
-          + "\""+ path + "\" but no libaryURI is defined.");
+        throw new Error("Attempt to retrieve the library module "
+          + "\""+ path + "\" but no libary URI is defined.");
       }
       return libraryURI + path;
     }
   };
 
+  /* Remote */
+  var XMLHttpFactories = [
+    function () {return new XMLHttpRequest()},
+    function () {return new ActiveXObject("Msxml2.XMLHTTP")},
+    function () {return new ActiveXObject("Msxml3.XMLHTTP")},
+    function () {return new ActiveXObject("Microsoft.XMLHTTP")}
+  ];
+
+  var createXMLHTTPObject = function () {
+    var xmlhttp = false;
+    for (var i = 0, ii = XMLHttpFactories.length; i < ii; i++) {
+      try {
+        xmlhttp = XMLHttpFactories[i]();
+      } catch (error) {
+        continue;
+      }
+      break;
+    }
+    return xmlhttp;
+  };
+
   /* Modules */
+  var fetchModuleSync = function (path) {
+    var request = createXMLHTTPObject();
+    if (!request) {
+      throw new Error("Error making remote request.")
+    }
+
+    request.open('GET', URIForModulePath(path), false);
+    request.send(null);
+    if (request.status == 200) {
+      // Build module constructor.
+      var response = new Function(
+          'return function (require, exports, module) {\n'
+            + request.responseText + '};\n')();
+
+      installMulti(path, response);
+    } else {
+      installMulti(path, null);
+    }
+  };
+
   var loadModule = function (path) {
     var module = modules[path];
     // If it's a function then it hasn't been exported yet. Run function and
@@ -90,6 +145,10 @@ var require =
     var suffixes = ['', '.js', '/index.js'];
     for (var i = 0, ii = suffixes.length; i < ii; i++) {
       var path_ = path + suffixes[i];
+      if (!Object.prototype.hasOwnProperty.call(modules, path_)) {
+        fetchModuleSync(path_);
+      }
+
       var module = loadModule(path_);
       if (module) {
         return module;
@@ -157,5 +216,7 @@ var require =
   var rootRequire = requireRelativeTo('/');
   rootRequire._modules = modules;
   rootRequire.install = installMulti;
+  rootRequire.setRootURI = setRootURI;
+  rootRequire.setLibraryURI = setLibraryURI;
   return rootRequire;
 })();

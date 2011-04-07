@@ -1,7 +1,11 @@
 #!/bin/bash
 
 RESULT=`../modulizer.js --root-path root --library-path lib --import-libraries --import-root --include-kernel -- ext`
-node -e "$RESULT require(\"/main.js\")" > actual.out
+TEST=`cat test.js`
+echo "$RESULT
+$TEST" > code.js
+node -e "$RESULT
+$TEST" > actual.out
 if ! diff expected.out actual.out
 then
 	echo "FAIL: Output does not match expected."
