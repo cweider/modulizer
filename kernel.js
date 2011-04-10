@@ -4,6 +4,12 @@ var require =
   var main = null;
   var modules = {};
   var loadingModules = {};
+  var installWaiters = {};
+  var installRequests = [];
+  var installRequest = undefined;
+
+  var syncLock = undefined;
+  var globalKeyPath = undefined;
 
   var rootURI = '/';
   var libraryURI = undefined;
@@ -37,14 +43,13 @@ var require =
     }
 
     return pathComponents2.join('/');
-  };
+  }
 
-  var fullyQualifyPath = function (path, basePath) {
+  function fullyQualifyPath(path, basePath) {
     var fullyQualifiedPath = path;
     if (path.charAt(0) == '.'
       && (path.charAt(1) == '/'
-        || (path.charAt(1) == '.'
-          && path.charAt(2) == '/'))) {
+        || (path.charAt(1) == '.' && path.charAt(2) == '/'))) {
       if (!basePath) {
         basePath = '/';
       } else if (basePath.charAt(basePath.length-1) != '/') {
@@ -53,20 +58,26 @@ var require =
       fullyQualifiedPath = basePath + path;
     }
     return fullyQualifiedPath;
-  };
+  }
 
   function setRootURI(URI) {
     if (!URI) {
       throw new Error("Argument Error: invalid root URI.");
     }
     rootURI = (URI.charAt(URI.length-1) == '/' ? URI.slice(0,-1) : URI);
-  };
+  }
 
   function setLibraryURI(URI) {
     libraryURI = (URI.charAt(URI.length-1) == '/' ? URI : URI + '/');
-  };
+  }
 
   function URIForModulePath(path) {
+    var components = path.split('/');
+    for (var i = 0, ii = components.length; i < ii; i++) {
+      components[i] = encodeURIComponent(components[i]);
+    }
+    path = components.join('/')
+
     if (path.charAt(0) == '/') {
       return rootURI + path;
     } else {
@@ -76,9 +87,13 @@ var require =
       }
       return libraryURI + path;
     }
-  };
+  }
 
   /* Remote */
+  function setGlobalKeyPath (value) {
+    globalKeyPath = value;
+  }
+
   var XMLHttpFactories = [
     function () {return new XMLHttpRequest()},
     function () {return new ActiveXObject("Msxml2.XMLHTTP")},
@@ -97,10 +112,72 @@ var require =
       break;
     }
     return xmlhttp;
-  };
+  }
 
   /* Modules */
-  function fetchModuleSync(path) {
+  function fetchModule(path, continuation) {
+    if (Object.prototype.hasOwnProperty.call(installWaiters, path)) {
+      installWaiters[path].push(continuation);
+    } else {
+      installWaiters[path] = [continuation];
+      scheduleFetchInstall(path);
+    }
+  }
+
+  function scheduleFetchInstall(path) {
+    installRequests.push(path);
+    if (installRequest === undefined) {
+      continueScheduledFetchInstalls();
+    }
+  }
+
+  function continueScheduledFetchInstalls() {
+    if (installRequests.length > 0) {
+      installRequest = installRequests.pop();
+      var fetchFunc = globalKeyPath ? fetchInstallJSONP : fetchInstallXHR;
+      fetchFunc(installRequest);
+    }
+  }
+
+  function fetchInstallXHR(path) {
+    var request = createXMLHTTPObject();
+    if (!request) {
+      throw new Error("Error making remote request.")
+    }
+
+    request.open('GET', URIForModulePath(path), true);
+    request.onreadystatechange = function (event) {
+      if (request.readyState == 4) {
+        if (request.status == 200) {
+          // Build module constructor.
+          var response = new Function(
+              'return function (require, exports, module) {\n'
+                + request.responseText + '};\n')();
+
+          install(path, response);
+        } else {
+          install(path, null);
+        }
+      }
+    };
+    request.send(null);
+  }
+
+  function fetchInstallJSONP(path) {
+    var head = document.head
+      || document.getElementsByTagName('head')[0]
+      || document.documentElement;
+    var script = document.createElement('script');
+    script.async = "async";
+    script.defer = "defer";
+    script.type = "text/javascript";
+    script.src = URIForModulePath(path)
+      + '?callback=' + encodeURIComponent(globalKeyPath + '.install');
+
+    head.insertBefore(script, head.firstChild);
+  }
+
+  function fetchModuleSync(path, continuation) {
     var request = createXMLHTTPObject();
     if (!request) {
       throw new Error("Error making remote request.")
@@ -114,18 +191,19 @@ var require =
           'return function (require, exports, module) {\n'
             + request.responseText + '};\n')();
 
-      installMulti(path, response);
+      install(path, response);
     } else {
-      installMulti(path, null);
+      install(path, null);
     }
-  };
+    continuation();
+  }
 
   function loadModule(path) {
     var module = modules[path];
     // If it's a function then it hasn't been exported yet. Run function and
     //  then replace with exports result.
     if (module instanceof Function) {
-      if (Object.prototype.hasOwnProperty(loadingModules, path)) {
+      if (Object.prototype.hasOwnProperty.call(loadingModules, path)) {
         throw new Error("Encountered circurlar dependency.");
       }
       var _module = {id: path, exports: {}};
@@ -139,23 +217,57 @@ var require =
       delete loadingModules[path];
     }
     return module;
-  };
+  }
 
-  function moduleAtPath(path) {
+  function _moduleAtPath(path, fetchFunc, continuation) {
     var suffixes = ['', '.js', '/index.js'];
-    for (var i = 0, ii = suffixes.length; i < ii; i++) {
-      var path_ = path + suffixes[i];
-      if (!Object.prototype.hasOwnProperty.call(modules, path_)) {
-        fetchModuleSync(path_);
-      }
+    var i = 0, ii = suffixes.length;
+    var _find = function (i) {
+      if (i < ii) {
+        var path_ = path + suffixes[i];
+        var after = function () {
+          var module = loadModule(path_);
+          if (module === null) {
+            _find(i + 1);
+          } else {
+            continuation(module);
+          }
+        }
 
-      var module = loadModule(path_);
-      if (module) {
-        return module;
+        if (!Object.prototype.hasOwnProperty.call(modules, path_)) {
+          fetchFunc(path_, after);
+        } else {
+          after();
+        }
+
+      } else {
+        continuation(null);
       }
+    };
+    _find(0);
+  }
+
+  function moduleAtPath(path, continuation) {
+    // Detect if this call, which has the potential to be
+    //  asynchrounously, is not completed synchronously.
+    var brokeSyncLock = true;
+    wrappedContinuation = function () {
+      brokeSyncLock = false;
+      continuation.apply(this, arguments);
+    };
+
+    _moduleAtPath(path, fetchModule, wrappedContinuation);
+
+    if (syncLock && brokeSyncLock) {
+      throw new Error(
+          "Attempt to load module asnynchronously in a synchronous block.");
     }
-    return undefined;
-  };
+  }
+
+  function moduleAtPathSync(path) {
+    _moduleAtPath(path, fetchModuleSync, function (m) {module = m});
+    return module;
+  }
 
   /* Installation */
   function installModule(path, module) {
@@ -170,7 +282,7 @@ var require =
     } else {
       modules[path] = module;
     }
-  };
+  }
 
   function installModules(moduleMap) {
     if (typeof moduleMap != 'object') {
@@ -181,41 +293,71 @@ var require =
         installModule(path, moduleMap[path]);
       }
     }
-  };
+  }
 
-  function installMulti(fullyQualifiedPathOrModuleMap, module) {
+  function install(fullyQualifiedPathOrModuleMap, module) {
+    var moduleMap;
     if (arguments.length == 1) {
-      installModules(fullyQualifiedPathOrModuleMap);
+      moduleMap = fullyQualifiedPathOrModuleMap;
+      installModules(moduleMap);
     } else if (arguments.length == 2) {
+      var path = fullyQualifiedPathOrModuleMap;
       installModule(fullyQualifiedPathOrModuleMap, module);
+      moduleMap = {};
+      moduleMap[path] = module;
     } else {
       throw new Error("Argument error: expected 1 or 2 got "
           + arguments.length + ".");
     }
-  };
+
+    if (!syncLock) {
+      for (var path in moduleMap) {
+        if (Object.prototype.hasOwnProperty.call(moduleMap, path)
+          && Object.prototype.hasOwnProperty.call(installWaiters, path)) {
+          var continuations = installWaiters[path];
+          delete installWaiters[path];
+          for (var i = 0, ii = continuations.length; i < ii; i++) {
+            continuations[i]();
+          }
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(moduleMap, installRequest)) {
+        installRequest = undefined;
+        continueScheduledFetchInstalls();
+      }
+    }
+  }
 
   /* Require */
-  function requireBase(path) {
-    var module = moduleAtPath(path);
-    if (!module) {
-      throw new Error("The module at \"" + path + "\" does not exist.");
+  function requireBase(path, continuation) {
+    if (continuation === undefined) {
+      var module = moduleAtPathSync(path);
+      if (!module) {
+        throw new Error("The module at \"" + path + "\" does not exist.");
+      }
+      return module.exports;
+    } else {
+      if (!(continuation instanceof Function)) {
+        throw new Error("Argument Error: continuation must be a function.");
+      }
+      moduleAtPath(path, continuation);
     }
-    return module.exports;
-  };
+  }
 
   var requireRelativeTo = function (basePath) {
-    function require(qualifiedPath) {
+    function require(qualifiedPath, continuation) {
       var path = normalizePath(fullyQualifyPath(qualifiedPath, basePath));
-      return requireBase(path);
-    };
+      return requireBase(path, continuation);
+    }
     require.main = main;
 
     return require;
-  };
+  }
 
   var rootRequire = requireRelativeTo('/');
   rootRequire._modules = modules;
-  rootRequire.install = installMulti;
+  rootRequire.install = install;
+  rootRequire.setGlobalKeyPath = setGlobalKeyPath;
   rootRequire.setRootURI = setRootURI;
   rootRequire.setLibraryURI = setLibraryURI;
   return rootRequire;
