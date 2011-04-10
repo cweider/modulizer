@@ -47,7 +47,11 @@ var canonicalPath = function (rootPath, libraryPaths, path) {
   var rootPart;
   while ((pathPart = pathSplit.shift()) == (rootPart = rootSplit.shift())) {;}
 
-  return '/' + pathutil.join((new Array(rootSplit.length+1)).join('../'), pathPart, pathSplit.join('/'));
+  return '/' + pathutil.join(
+    (new Array(rootSplit.length+1)).join('../')
+  , pathPart
+  , pathSplit.join('/')
+  );
 }
 
 var breakForError = function (message) {
@@ -72,11 +76,15 @@ while (argument = arguments.shift()) {
 
   switch (argument) {
     case '--library-path':
-      arguments.length || breakForError("Path must be provided for --library-path");
+      if (arguments.length == 0) {
+        breakForError("Path must be provided for --library-path");
+      }
       options.libraryPaths.unshift(arguments.shift());
       break;
     case '--root-path':
-      arguments.length || breakForError("Path must be provided for --root-path");
+      if (arguments.length == 0) {
+        breakForError("Path must be provided for --root-path");
+      }
       options.rootPath = arguments.shift();
       break;
     case '--import-libraries':
@@ -103,7 +111,8 @@ options.rootPath = pathify(options.rootPath);
 // Build list of files/directories to process
 var importQueue = arguments.concat([]);
 if (options.importLibrary) {
-  options.libraryPaths.forEach(function (p) {importQueue.unshift(p)}, importQueue)
+  options.libraryPaths.forEach(
+      function (p) {importQueue.unshift(p)}, importQueue)
 }
 if (options.importRoot) {
   importQueue.unshift(options.rootPath);
@@ -147,7 +156,11 @@ var readAll = function (paths, onFile, onComplete, onError) {
                 if (error) {
                   onError("Could not read " + path);
                 } else {
-                  onFile(canonicalPath(options.rootPath, options.libraryPaths, path), text);
+                  onFile(canonicalPath(
+                      options.rootPath
+                    , options.libraryPaths
+                    , path)
+                  , text);
                   return _readAll()
                 }
               });
@@ -168,9 +181,11 @@ var readAll = function (paths, onFile, onComplete, onError) {
 writeStream.write('require.install({');
 var initial = true;
 readAll(importQueue, function (path, text) {
-  var modularizedCode = 'function (require, exports, module) {\n' + text + '}';
-  writeStream.write((initial ? !(initial = false) && "\n  " : ",\n  ") + JSON.stringify(path) + ": " +
-    modularizedCode.replace(/\n([^\n])/g, "\n    $1")
+  var modularizedCode =
+    'function (require, exports, module) {\n' + text + '}';
+  writeStream.write((initial ? !(initial = false) && "\n  " : ",\n  ")
+    + JSON.stringify(path) + ": "
+    + modularizedCode.replace(/\n([^\n])/g, "\n    $1")
     );
 }, function () {
   writeStream.write('\n});\n');
