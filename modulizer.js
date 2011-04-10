@@ -24,7 +24,8 @@
 var fs = require('fs');
 var pathutil = require('path');
 
-var canonicalPath = function (rootPath, libraryPaths, path) {
+/* Convert a given system path to a path suitable for the module system. */
+function systemToModulePath(rootPath, libraryPaths, path) {
   path = pathutil.resolve(path);
 
   // Is this path in a library?
@@ -57,6 +58,137 @@ var canonicalPath = function (rootPath, libraryPaths, path) {
   , pathSplit.join('/')
   );
 }
+
+/* This is basically `find(1)`. */
+function find(paths, filter, callback) {
+  var queue = paths.concat([]);
+  var paths = [];
+
+  var _find = function () {
+    var path = queue.shift();
+    if (path === undefined) {
+      callback(undefined, paths);
+    } else {
+      fs.stat(path, function (error, stats) {
+        if (error) {
+          callback(new Error("Error importing " + path));
+        } else {
+          if (stats.isDirectory()) {
+            fs.readdir(path, function (error, files) {
+              if (error) {
+                callback(new Error("Could not read " + path));
+              } else {
+                var args = files.map(function (file) {
+                  return pathutil.join(path, file);
+                });
+                args.unshift(queue.length, 0);
+                queue.splice.apply(queue, args);
+                _find();
+              }
+            });
+          } else if (stats.isFile()) {
+            if (!filter || filter(path)) {
+              paths.push(path);
+            }
+            _find();
+          } else {
+            callback(new Error("Path is not a file or directory " + path));
+          }
+        }
+      });
+    }
+  }
+  _find();
+}
+
+/* Read each of the paths in serial. */
+function readEach(paths, onFile, complete) {
+  var ii = paths.length
+  var _readEach = function (i) {
+    if (i < ii) {
+      var path = paths[i];
+      fs.readFile(path, function (error, text) {
+        onFile(path, error ? null : text);
+        _readEach(i+1);
+      });
+    } else {
+      complete();
+    }
+  };
+  _readEach(0);
+}
+
+/* The all paths that will be searched for when looking up `path`. */
+function relatedPaths(path) {
+  var paths = [];
+  var suffixes = ['', '.js', '/index.js'];
+  for (var i = 0, ii = suffixes.length; i < ii; i++) {
+    var suffix = suffixes[i];
+    if (path.slice(path.length-suffix.length) == suffix) {
+      var path_ = path.slice(0, path.length-suffix.length);
+      paths.push(path_);
+    }
+  }
+  return paths;
+}
+
+/* Take system paths for modules and compile as `require.install()` code. */
+function compile(rootPath, libraryPaths, paths, writeStream, callback) {
+  // Sort paths by modulePath.
+  var pathMap = {};
+  paths.forEach(function (path) {
+    relatedPaths(path).forEach(function (path) {
+      pathMap[path] =
+        systemToModulePath(rootPath, libraryPaths, path);
+    });
+  });
+
+  var path_paths = [];
+  for (var path in pathMap) {
+    if (Object.prototype.hasOwnProperty.call(pathMap, path)) {
+      path_paths.push([path, pathMap[path]]);
+    }
+  }
+  path_paths = path_paths.sort(function (a, b) {
+    if (a[1] > b[1]) {
+      return 1;
+    } else if (a[1] < b[1]) {
+      return -1;
+    } else {
+      return 0;
+    }
+  });
+
+  var paths = [];
+  var modulePaths = [];
+  path_paths.forEach(function (path_path) {
+    paths.push(path_path[0]);
+    modulePaths.push(path_path[1]);
+  });
+
+  // Read the files in order and write them to the stream.
+  writeStream.write('require.install({');
+  var initial = true;
+  readEach(paths,
+    function (path, text) {
+      if (text === null) {
+        text = 'null';
+      } else {
+        text = ('\n' + text).replace(/\n([^\n])/g, "\n    $1")
+        text = 'function (require, exports, module) {' + text + '  }';
+      }
+
+      writeStream.write((initial ? !(initial = false) && "\n  " : "\n, ")
+        + JSON.stringify(pathMap[path]) + ": " + text
+        );
+    }
+  , function () {
+      writeStream.write('\n});\n');
+      callback(undefined, modulePaths);
+    }
+  );
+}
+
 
 var breakForError = function (message) {
   process.stderr.write(message + '\n');
@@ -133,115 +265,6 @@ if (options.kernel) {
   writeStream.write(fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
 }
 
-var find = function (paths, filter, callback) {
-  var queue = paths.concat([]);
-  var paths = [];
-
-  var _find = function () {
-    var path = queue.shift();
-    if (path === undefined) {
-      callback(undefined, paths);
-    } else {
-      fs.stat(path, function (error, stats) {
-        if (error) {
-          callback(new Error("Error importing " + path));
-        } else {
-          if (stats.isDirectory()) {
-            fs.readdir(path, function (error, files) {
-              if (error) {
-                callback(new Error("Could not read " + path));
-              } else {
-                var args = files.map(function (file) {
-                  return pathutil.join(path, file);
-                });
-                args.unshift(queue.length, 0);
-                queue.splice.apply(queue, args);
-                _find();
-              }
-            });
-          } else if (stats.isFile()) {
-            if (!filter || filter(path)) {
-              paths.push(path);
-            }
-            _find();
-          } else {
-            callback(new Error("Path is not a file or directory " + path));
-          }
-        }
-      });
-    }
-  }
-  _find();
-};
-
-var readAll = function (paths, onFile, onComplete) {
-  paths = paths.concat();
-  var _readAll = function () {
-    var path = paths.shift();
-    if (!path) {
-      onComplete();
-    } else {
-      fs.readFile(path, 'utf8', function (error, text) {
-        onFile(path, error ? null : text);
-        _readAll();
-      });
-    }
-  };
-  _readAll();
-};
-
-var writeFiles = function (paths) {
-  var pathMap = {};
-  paths.forEach(function (path) {
-    var suffixes = ['', '.js', '/index.js'];
-    for (var i = 0, ii = suffixes.length; i < ii; i++) {
-      var suffix = suffixes[i];
-      if (path.slice(path.length-suffix.length) == suffix) {
-        var path_ = path.slice(0, path.length-suffix.length);
-        pathMap[path_] =
-          canonicalPath(options.rootPath, options.libraryPaths, path_);
-      }
-    }
-  });
-
-  var path_paths = [];
-  for (var path in pathMap) {
-    if (Object.prototype.hasOwnProperty.call(pathMap, path)) {
-      path_paths.push([path, pathMap[path]]);
-    }
-  }
-  path_paths = path_paths.sort(function (a, b) {
-    if (a[1] > b[1]) {
-      return 1;
-    } else if (a[1] < b[1]) {
-      return -1;
-    } else {
-      return 0;
-    }
-  });
-
-  var paths = [];
-  path_paths.forEach(function (path_path) {
-    paths.push(path_path[0]);
-  });
-
-  writeStream.write('require.install({');
-  var initial = true;
-  readAll(paths, function (path, text) {
-    if (text === null) {
-      text = 'null';
-    } else {
-      text = ('\n' + text).replace(/\n([^\n])/g, "\n    $1")
-      text = 'function (require, exports, module) {' + text + '  }';
-    }
-
-    writeStream.write((initial ? !(initial = false) && "\n  " : "\n, ")
-      + JSON.stringify(pathMap[path]) + ": " + text
-      );
-  }, function () {
-    writeStream.write('\n});\n');
-  }, breakForError);
-};
 
 find(importQueue,
   function (path) {
@@ -255,7 +278,15 @@ find(importQueue,
     if (error) {
       breakForError(error.messsage);
     } else {
-      writeFiles(paths);
+      compile(
+        options.rootPath
+      , options.libraryPaths
+      , paths
+      , writeStream
+      , function (paths) {
+          // no-op
+        }
+      );
     }
   }
 );
