@@ -231,12 +231,12 @@ var writeFiles = function (paths) {
     if (text === null) {
       text = 'null';
     } else {
-      text = 'function (require, exports, module) {\n' + text + '}';
+      text = ('\n' + text).replace(/\n([^\n])/g, "\n    $1")
+      text = 'function (require, exports, module) {' + text + '  }';
     }
 
-    writeStream.write((initial ? !(initial = false) && "\n  " : ",\n  ")
-      + JSON.stringify(pathMap[path]) + ": "
-      + text.replace(/\n([^\n])/g, "\n    $1")
+    writeStream.write((initial ? !(initial = false) && "\n  " : "\n, ")
+      + JSON.stringify(pathMap[path]) + ": " + text
       );
   }, function () {
     writeStream.write('\n});\n');
