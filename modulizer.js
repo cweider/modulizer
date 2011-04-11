@@ -24,10 +24,11 @@ var fs = require('fs');
 var pathutil = require('path');
 
 /* Convert a given system path to a path suitable for the module system. */
-function systemToModulePath(rootPath, libraryPaths, path) {
+function systemToModulePath(rootPath, libraryPath, path) {
   path = pathutil.resolve(path);
 
   // Is this path in a library?
+  var libraryPaths = libraryPath ? [libraryPath] : [];
   for (var i = 0, ii = libraryPaths.length; i < ii; i++) {
     var libraryPath = libraryPaths[i];
     if (path.slice(0, libraryPath.length) == libraryPath) {
@@ -132,13 +133,13 @@ function relatedPaths(path) {
 }
 
 /* Take system paths for modules and compile as `require.install()` code. */
-function compile(rootPath, libraryPaths, paths, writeStream, callback) {
+function compile(rootPath, libraryPath, paths, writeStream, callback) {
   // Sort paths by modulePath.
   var pathMap = {};
   paths.forEach(function (path) {
     relatedPaths(path).forEach(function (path) {
       pathMap[path] =
-        systemToModulePath(rootPath, libraryPaths, path);
+        systemToModulePath(rootPath, libraryPath, path);
     });
   });
 
@@ -186,54 +187,6 @@ function compile(rootPath, libraryPaths, paths, writeStream, callback) {
       callback(undefined, modulePaths);
     }
   );
-}
-
-
-var breakForError = function (message) {
-  process.stderr.write(message + '\n');
-  process.exit(1);
-}
-
-var arguments = process.argv.slice(2);
-var argument;
-
-var options = {};
-options.rootPath = process.cwd();
-options.libraryPaths = [];
-
-while (argument = arguments.shift()) {
-  if (argument.slice(0,2) != '--') {
-    arguments.unshift(argument);
-    break;
-  } else if (argument == '--') {
-    break;
-  }
-
-  switch (argument) {
-    case '--library-path':
-      if (arguments.length == 0) {
-        breakForError("Path must be provided for --library-path");
-      }
-      options.libraryPaths.unshift(arguments.shift());
-      break;
-    case '--root-path':
-      if (arguments.length == 0) {
-        breakForError("Path must be provided for --root-path");
-      }
-      options.rootPath = arguments.shift();
-      break;
-    case '--import-libraries':
-      options.importLibrary = true;
-      break;
-    case '--import-root':
-      options.importRoot = true;
-      break;
-    case '--include-kernel':
-      options.kernel = true;
-      break;
-    default:
-      breakForError("Unknown option: " + argument);
-  }
 }
 
 function Modulizer(configuration) {
@@ -287,7 +240,7 @@ Modulizer.prototype = new function () {
         } else {
           compile(
             configuration.rootPath
-          , configuration.libraryPath ? [configuration.libraryPath] : []
+          , configuration.libraryPath
           , paths
           , writeStream
           , function (paths) {
