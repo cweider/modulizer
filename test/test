@@ -1,6 +1,6 @@
 #!/bin/bash
 
-RESULT=`../modulizer.js --root-path root --library-path lib --import-libraries --import-root --include-kernel -- ext`
+RESULT=`../modulize --root-path root --library-path lib --import-libraries --import-root --include-kernel -- ext`
 TEST=`cat test.js`
 echo "$RESULT
 $TEST" > code.js

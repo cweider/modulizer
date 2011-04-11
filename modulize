@@ -1,0 +1,87 @@
+#!/usr/bin/node
+/*
+
+  Copyright (C) 2011 Chad Weider
+
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
+
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source distribution.
+
+*/
+
+var fs = require('fs');
+var pathutil = require('path');
+var Modulizer = require('./modulizer').Modulizer;
+
+var breakForError = function (message) {
+  process.stderr.write(message + '\n');
+  process.exit(1);
+}
+
+var arguments = process.argv.slice(2);
+var argument;
+
+var options = {};
+options.rootPath = process.cwd();
+options.libraryPaths = [];
+
+while (argument = arguments.shift()) {
+  if (argument.slice(0,2) != '--') {
+    arguments.unshift(argument);
+    break;
+  } else if (argument == '--') {
+    break;
+  }
+
+  switch (argument) {
+    case '--library-path':
+      if (arguments.length == 0) {
+        breakForError("Path must be provided for --library-path");
+      }
+      options.libraryPath = arguments.shift();
+      break;
+    case '--root-path':
+      if (arguments.length == 0) {
+        breakForError("Path must be provided for --root-path");
+      }
+      options.rootPath = arguments.shift();
+      break;
+    case '--import-libraries':
+      options.importLibrary = true;
+      break;
+    case '--import-root':
+      options.importRoot = true;
+      break;
+    case '--include-kernel':
+      options.kernel = true;
+      break;
+    default:
+      breakForError("Unknown option: " + argument);
+  }
+}
+
+
+var writeStream = process.stdout;
+writeStream.on('error', function () {
+  console.log("Could not write to output.");
+  process.exit(1);
+});
+
+if (options.kernel) {
+  writeStream.write(fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
+}
+
+options.import = arguments.concat([]);
+(new Modulizer(options)).compile(writeStream, function () {});

@@ -1,4 +1,3 @@
-#!/usr/bin/node
 /*
 
   Copyright (C) 2011 Chad Weider
@@ -237,56 +236,68 @@ while (argument = arguments.shift()) {
   }
 }
 
-// Normalize paths
-var pathify = function (path) {
-  return pathutil.normalize(pathutil.resolve(path) + '/');
-}
-options.libraryPaths = options.libraryPaths.map(pathify);
-options.rootPath = pathify(options.rootPath);
-
-// Build list of files/directories to process
-var importQueue = arguments.concat([]);
-if (options.importLibrary) {
-  options.libraryPaths.forEach(
-      function (p) {importQueue.unshift(p)}, importQueue)
-}
-if (options.importRoot) {
-  importQueue.unshift(options.rootPath);
-}
-
-// Process all files
-var writeStream = process.stdout;
-writeStream.on('error', function () {
-  console.log("Could not write to output.");
-  process.exit(1);
-});
-
-if (options.kernel) {
-  writeStream.write(fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
-}
-
-
-find(importQueue,
-  function (path) {
-    if (pathutil.extname(path) == '.js') {
-      return true;
-    } else {
-      return false;
+function Modulizer(configuration) {
+  this._configuration = {
+    'rootPath': null
+  , 'libraryPath': null
+  , 'importLibrary': false
+  , 'importRoot': false
+  , 'import': []
+  };
+  for (var key in this._configuration) {
+    if (configuration.hasOwnProperty(key)) {
+      this._configuration[key] = configuration[key];
     }
   }
-, function (error, paths) {
-    if (error) {
-      breakForError(error.messsage);
-    } else {
-      compile(
-        options.rootPath
-      , options.libraryPaths
-      , paths
-      , writeStream
-      , function (paths) {
-          // no-op
+  configuration = this._configuration;
+
+  // Normalize paths
+  var pathify = function (path) {
+    return pathutil.normalize(pathutil.resolve(path) + '/');
+  }
+  configuration.libraryPath = pathify(configuration.libraryPath);
+  configuration.rootPath = pathify(configuration.rootPath);
+  configuration.import = configuration.import || [];
+}
+Modulizer.prototype = new function () {
+  this.compile = function (writeStream, complete) {
+    var configuration = this._configuration;
+
+    // Build list of files/directories to process
+    var paths = [];
+    if (configuration.importRoot && configuration.rootPath) {
+      paths.push(configuration.rootPath);
+    }
+    if (configuration.importRoot && configuration.libraryPath) {
+      paths.push(configuration.libraryPath);
+    }
+    paths.concat(configuration.import)
+
+    find(paths,
+      function (path) {
+        if (pathutil.extname(path) == '.js') {
+          return true;
+        } else {
+          return false;
         }
-      );
-    }
+      }
+    , function (error, paths) {
+        if (error) {
+          // no-op
+        } else {
+          compile(
+            configuration.rootPath
+          , configuration.libraryPath ? [configuration.libraryPath] : []
+          , paths
+          , writeStream
+          , function (paths) {
+              // no-op
+            }
+          );
+        }
+      }
+    );
   }
-);
+}
+
+exports.Modulizer = Modulizer;
