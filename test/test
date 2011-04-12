@@ -1,11 +1,8 @@
 #!/bin/bash
 
-RESULT=`../modulize --root-path root --library-path lib --import-libraries --import-root --include-kernel -- ext`
-TEST=`cat test.js`
-echo "$RESULT
-$TEST" > code.js
-node -e "$RESULT
-$TEST" > actual.out
+OUT=`../modulize --output code.js --root-path root --library-path lib --import-dependencies --include-kernel -- ./root/main.js`
+CODE=`cat code.js test.js`
+node -e "$CODE" > actual.out
 if ! diff expected.out actual.out
 then
 	echo "FAIL: Output does not match expected."

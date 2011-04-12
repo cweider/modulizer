@@ -22,6 +22,7 @@
 
 var fs = require('fs');
 var pathutil = require('path');
+var asyncRequire = require('./async_require');
 
 /* Convert a given system path to a path suitable for the module system. */
 function systemToModulePath(rootPath, libraryPath, path) {
@@ -57,6 +58,15 @@ function systemToModulePath(rootPath, libraryPath, path) {
   , pathPart
   , pathSplit.join('/')
   );
+}
+
+/* Inverts `systemToModulePath`. */
+function moduleToSystemPath(rootPath, libraryPath, path) {
+  if (path.charAt(0) == '/') {
+    return pathutil.normalize(pathutil.join(rootPath, path));
+  } else {
+    return pathutil.normalize(pathutil.join(libraryPath, path));
+  }
 }
 
 /* This is basically `find(1)`. */
@@ -195,6 +205,7 @@ function Modulizer(configuration) {
   , 'libraryPath': null
   , 'importLibrary': false
   , 'importRoot': false
+  , 'importDependencies': false
   , 'import': []
   };
   for (var key in this._configuration) {
@@ -224,7 +235,7 @@ Modulizer.prototype = new function () {
     if (configuration.importRoot && configuration.libraryPath) {
       paths.push(configuration.libraryPath);
     }
-    paths.concat(configuration.import)
+    paths = paths.concat(configuration.import);
 
     find(paths,
       function (path) {
@@ -238,15 +249,51 @@ Modulizer.prototype = new function () {
         if (error) {
           // no-op
         } else {
-          compile(
-            configuration.rootPath
-          , configuration.libraryPath
-          , paths
-          , writeStream
-          , function (paths) {
-              // no-op
-            }
-          );
+          var compileEverything = function (paths) {
+            compile(
+              configuration.rootPath
+            , configuration.libraryPath
+            , paths
+            , writeStream
+            , function (paths) {
+                // no-op
+              }
+            );
+          };
+
+          if (configuration.importDependencies) {
+            var mockRequire = asyncRequire.requireForPaths(
+              configuration.rootPath, configuration.libraryPath);
+
+            mockRequire.emitter.addListener('idle', function () {
+              var modules = mockRequire._modules;
+              var paths = [];
+              for (var path in modules) {
+                if (Object.prototype.hasOwnProperty.call(modules, path)) {
+                  paths.push(
+                    moduleToSystemPath(
+                      configuration.rootPath
+                    , configuration.libraryPath
+                    , path
+                    )
+                  );
+                }
+              }
+              compileEverything(paths);
+            });
+
+            paths.forEach(function (path) {
+              mockRequire(systemToModulePath(
+                  configuration.rootPath
+                , configuration.libraryPath
+                , path)
+              , function () {}
+              );
+            });
+
+          } else {
+            compileEverything(paths);
+          }
         }
       }
     );

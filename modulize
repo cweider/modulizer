@@ -58,11 +58,20 @@ while (argument = arguments.shift()) {
       }
       options.rootPath = arguments.shift();
       break;
+    case '--output':
+      if (arguments.length == 0) {
+        breakForError("Path must be provided for --ouput");
+      }
+      options.outputPath = arguments.shift();
+      break;
     case '--import-libraries':
       options.importLibrary = true;
       break;
     case '--import-root':
       options.importRoot = true;
+      break;
+    case '--import-dependencies':
+      options.importDependencies = true;
       break;
     case '--include-kernel':
       options.kernel = true;
@@ -74,6 +83,10 @@ while (argument = arguments.shift()) {
 
 
 var writeStream = process.stdout;
+if (options.outputPath) {
+  writeStream =
+    fs.createWriteStream(options.outputPath, {flags: 'w', encoding: 'utf8'});
+}
 writeStream.on('error', function () {
   console.log("Could not write to output.");
   process.exit(1);
