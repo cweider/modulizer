@@ -18,9 +18,6 @@ var require =
   function normalizePath(path) {
     var pathComponents1 = path.split('/');
     var pathComponents2 = [];
-    if (path.charAt(0) == '/') {
-      pathComponents1.unshift('');
-    }
 
     var component;
     for (var i = 0, ii = pathComponents1.length; i < ii; i++) {
@@ -33,7 +30,10 @@ var require =
           }
           break;
         case '..':
-          if (pathComponents2.length) {
+          if (pathComponents2.length > 1
+            || (pathComponents2.length == 1
+              && pathComponents2[0] != ''
+              && pathComponents2[0] != '.')) {
             pathComponents2.pop();
             break;
           }
