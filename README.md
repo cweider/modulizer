@@ -10,6 +10,7 @@ The command line tools accepts the following arguments:
  * `--root-path`: Path that all non-library imports will be relative to. Defaults to `process.cwd()`.
  * `--import-libraries`: Import all files found in any the libraries specified.
  * `--import-root`: Import all files contained within the specified root path.
+ * `--import-dependencies`: Evaluates the required file and includes all files that are required for that evaluation.
  * `--include-kernel`: This prepends the output with a basic implementation of a CommonJS module loader.
 
 ## License ##
