@@ -11,7 +11,7 @@ var require =
   var syncLock = undefined;
   var globalKeyPath = undefined;
 
-  var rootURI = '/';
+  var rootURI = undefined;
   var libraryURI = undefined;
 
   /* Paths */
@@ -79,6 +79,10 @@ var require =
     path = components.join('/')
 
     if (path.charAt(0) == '/') {
+      if (!rootURI) {
+        throw new Error("Attempt to retrieve the root module "
+          + "\""+ path + "\" but no root URI is defined.");
+      }
       return rootURI + path;
     } else {
       if (!libraryURI) {
