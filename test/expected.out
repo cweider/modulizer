@@ -30,4 +30,3 @@ Util is:
 { escapeHTML: [Function],
   escapeHTMLAttribute: [Function],
   importantURL: 'http://example.com/' }
-{}
