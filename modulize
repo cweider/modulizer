@@ -30,41 +30,46 @@ var breakForError = function (message) {
   process.exit(1);
 }
 
-var arguments = process.argv.slice(2);
-var argument;
+var args = process.argv.slice(2);
+var arg;
 
 var options = {};
 options.rootPath = process.cwd();
 options.libraryPaths = [];
+importPaths = [];
 
-while (argument = arguments.shift()) {
-  if (argument.slice(0,2) != '--') {
-    arguments.unshift(argument);
+while (arg = args.shift()) {
+  if (arg.slice(0,2) != '--') {
+    importPaths.push(args);
     break;
-  } else if (argument == '--') {
+  } else if (arg == '--') {
+    importPaths = importPaths.concat(args);
     break;
   }
 
-  switch (argument) {
+  switch (arg) {
     case '--library-path':
-      if (arguments.length == 0) {
+      arg = args.shift();
+      if (!arg || arg == '--') {
         breakForError("Path must be provided for --library-path");
       }
-      options.libraryPath = arguments.shift();
+      options.libraryPath = arg;
       break;
     case '--root-path':
-      if (arguments.length == 0) {
+      arg = args.shift();
+      if (!arg || arg == '--') {
         breakForError("Path must be provided for --root-path");
       }
-      options.rootPath = arguments.shift();
+      options.rootPath = arg;
       break;
     case '--output':
-      if (arguments.length == 0) {
+      arg = args.shift();
+      if (!arg || arg == '--') {
         breakForError("Path must be provided for --ouput");
       }
-      options.outputPath = arguments.shift();
+      options.outputPath = arg;
       break;
-    case '--import-libraries':
+    case '--import-library':
       options.importLibrary = true;
       break;
     case '--import-root':
@@ -77,9 +82,10 @@ while (argument = arguments.shift()) {
       options.kernel = true;
       break;
     default:
-      breakForError("Unknown option: " + argument);
+      breakForError("Unknown option: " + arg);
   }
 }
+options.import = importPaths;
 
 
 var writeStream = process.stdout;
@@ -96,5 +102,4 @@ if (options.kernel) {
   writeStream.write(fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
 }
 
-options.import = arguments.concat([]);
 (new Modulizer(options)).compile(writeStream, function () {});
