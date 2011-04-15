@@ -11,6 +11,8 @@ The command line tools accepts the following arguments:
  * `--import-libraries`: Import all files found in any the libraries specified.
  * `--import-root`: Import all files contained within the specified root path.
  * `--import-dependencies`: Evaluates the required file and includes all files that are required for that evaluation.
+ * `--import`: Import the modules at the paths following.
+ * `--exclude`: Do not import the modules at the paths following.
  * `--include-kernel`: This prepends the output with a basic implementation of a CommonJS module loader.
 
 ## License ##
