@@ -176,7 +176,7 @@ var require =
     script.defer = "defer";
     script.type = "text/javascript";
     script.src = URIForModulePath(path)
-      + '?callback=' + encodeURIComponent(globalKeyPath + '.install');
+      + '?callback=' + encodeURIComponent(globalKeyPath + '.define');
 
     head.insertBefore(script, head.firstChild);
   }
@@ -360,7 +360,7 @@ var require =
 
   var rootRequire = requireRelativeTo('/');
   rootRequire._modules = modules;
-  rootRequire.install = install;
+  rootRequire.define = install;
   rootRequire.setGlobalKeyPath = setGlobalKeyPath;
   rootRequire.setRootURI = setRootURI;
   rootRequire.setLibraryURI = setLibraryURI;

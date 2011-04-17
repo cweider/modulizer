@@ -142,7 +142,7 @@ function relatedPaths(path) {
   return paths;
 }
 
-/* Take system paths for modules and compile as `require.install()` code. */
+/* Take system paths for modules and compile as `require.define()` code. */
 function compile(rootPath, libraryPath, paths, writeStream, callback) {
   // Sort paths by modulePath.
   var pathMap = {};
@@ -177,7 +177,7 @@ function compile(rootPath, libraryPath, paths, writeStream, callback) {
   });
 
   // Read the files in order and write them to the stream.
-  writeStream.write('require.install({');
+  writeStream.write('require.define({');
   var initial = true;
   readEach(paths,
     function (path, text) {
