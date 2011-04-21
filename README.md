@@ -12,7 +12,8 @@ The command line tools accepts the following arguments:
  * `--import-root`: Import all files contained within the specified root path.
  * `--import-dependencies`: Evaluates the required file and includes all files that are required for that evaluation.
  * `--import`: Import the modules at the paths following.
- * `--exclude`: Do not import the modules at the paths following.
+ * `--exclude`: Do not import the modules in the newline separated list specified.
+ * `--global-key-path`: The global accessor for the module system, useful when namespacing. This is also the path at which the kernel is installed if specified. Defaults to `require`. 
  * `--include-kernel`: This prepends the output with a basic implementation of a CommonJS module loader.
 
 ## License ##
