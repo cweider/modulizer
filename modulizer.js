@@ -143,7 +143,8 @@ function relatedPaths(path) {
 }
 
 /* Take system paths for modules and compile as `require.define()` code. */
-function compile(rootPath, libraryPath, paths, writeStream, callback) {
+function compile(rootPath, libraryPath, paths,
+    globalKeyPath, writeStream, callback) {
   if (paths.length == 0) {
     callback(undefined, modulePaths);
   }
@@ -181,7 +182,7 @@ function compile(rootPath, libraryPath, paths, writeStream, callback) {
   });
 
   // Read the files in order and write them to the stream.
-  writeStream.write('require.define({');
+  writeStream.write((globalKeyPath || 'require') + '.define({');
   var initial = true;
   readEach(paths,
     function (path, text) {
@@ -212,6 +213,7 @@ function Modulizer(configuration) {
   , 'importDependencies': false
   , 'import': []
   , 'exclude': []
+  , 'globalKeyPath': undefined
   };
   for (var key in this._configuration) {
     if (configuration.hasOwnProperty(key)) {
@@ -294,6 +296,7 @@ Modulizer.prototype = new function () {
               configuration.rootPath
             , configuration.libraryPath
             , paths
+            , configuration.globalKeyPath
             , writeStream
             , function (error, paths) {
                 complete && complete(error, paths);

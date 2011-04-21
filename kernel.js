@@ -1,5 +1,4 @@
-var require =
-  (typeof require != 'undefined') && require.install ? require :(function () {
+(function () {
   /* Storage */
   var main = null;
   var modules = {};

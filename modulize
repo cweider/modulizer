@@ -90,6 +90,13 @@ while (arg = args.shift()) {
         .split('\n');
       excludePaths = excludePaths.concat(paths);
       break;
+    case '--global-key-path':
+      arg = args.shift();
+      if (!arg || arg == '--') {
+        breakForError("Path must be provided for --report");
+      }
+      options.globalKeyPath = arg;
+      break;
     case '--import-library':
       options.importLibrary = true;
       break;
@@ -120,6 +127,11 @@ writeStream.on('error', function () {
 });
 
 if (options.kernel) {
+  if (options.globalKeyPath) {
+    writeStream.write(options.globalKeyPath + " = ", 'utf8');
+  } else {
+    writeStream.write("var require = ", 'utf8');
+  }
   writeStream.write(fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
 }
 
