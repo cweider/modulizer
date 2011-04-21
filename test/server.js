@@ -30,6 +30,11 @@ var libraryPath = pathutil.join(__dirname, 'lib')
 var port = 1
 
 var args = process.argv.slice(2);
+if (args.length != 3) {
+  console.error("Arguments: root, lib, test");
+  process.exit(1);
+}
+
 var virtualPaths = {
   '/root': args[0]
 , '/library': args[1]
