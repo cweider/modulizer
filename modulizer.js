@@ -144,6 +144,10 @@ function relatedPaths(path) {
 
 /* Take system paths for modules and compile as `require.define()` code. */
 function compile(rootPath, libraryPath, paths, writeStream, callback) {
+  if (paths.length == 0) {
+    callback(undefined, modulePaths);
+  }
+
   // Sort paths by modulePath.
   var pathMap = {};
   paths.forEach(function (path) {
@@ -207,6 +211,7 @@ function Modulizer(configuration) {
   , 'importRoot': false
   , 'importDependencies': false
   , 'import': []
+  , 'exclude': []
   };
   for (var key in this._configuration) {
     if (configuration.hasOwnProperty(key)) {
@@ -249,14 +254,49 @@ Modulizer.prototype = new function () {
         if (error) {
           // no-op
         } else {
+          // Convert to module paths.
+          paths = paths.map(function (path ) {
+            return systemToModulePath(
+                configuration.rootPath
+              , configuration.libraryPath
+              , path);
+          });
+
           var compileEverything = function (paths) {
+            // Do a bunch of work to remove included files from set.
+            // TODO: All of this System <-> Module conversion and mapping
+            // stuff should be possible to collapse. Meh.
+            var pathSet = {};
+            paths.forEach(function (path) {
+              pathSet[path] = true;
+            });
+            configuration.exclude.forEach(function (path) {
+              if (Object.prototype.hasOwnProperty.call(pathSet, path)) {
+                delete pathSet[path];
+              }
+            });
+            paths = [];
+            for (var path in pathSet) {
+              if (Object.prototype.hasOwnProperty.call(pathSet, path)) {
+                paths.push(path);
+              }
+            }
+
+            // Convert back to system paths.
+            paths = paths.map(function (path) {
+              return moduleToSystemPath(
+                  configuration.rootPath
+                , configuration.libraryPath
+                , path);
+            });
+
             compile(
               configuration.rootPath
             , configuration.libraryPath
             , paths
             , writeStream
-            , function (paths) {
-                // no-op
+            , function (error, paths) {
+                complete && complete(error, paths);
               }
             );
           };
@@ -270,25 +310,14 @@ Modulizer.prototype = new function () {
               var paths = [];
               for (var path in modules) {
                 if (Object.prototype.hasOwnProperty.call(modules, path)) {
-                  paths.push(
-                    moduleToSystemPath(
-                      configuration.rootPath
-                    , configuration.libraryPath
-                    , path
-                    )
-                  );
+                  paths.push(path);
                 }
               }
               compileEverything(paths);
             });
 
             paths.forEach(function (path) {
-              mockRequire(systemToModulePath(
-                  configuration.rootPath
-                , configuration.libraryPath
-                , path)
-              , function () {}
-              );
+              mockRequire(path, function () {});
             });
 
           } else {

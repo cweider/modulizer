@@ -37,6 +37,8 @@ var options = {};
 options.rootPath = process.cwd();
 options.libraryPaths = [];
 importPaths = [];
+excludePaths = [];
+reportPath = undefined;
 
 while (arg = args.shift()) {
   if (arg.slice(0,2) != '--') {
@@ -69,6 +71,25 @@ while (arg = args.shift()) {
       }
       options.outputPath = arg;
       break;
+    case '--report':
+      arg = args.shift();
+      if (!arg || arg == '--') {
+        breakForError("Path must be provided for --report");
+      }
+      reportPath = arg;
+      break;
+    case '--exclude':
+      arg = args.shift();
+      if (!arg || arg == '--') {
+        breakForError("Path must be provided for --report");
+      }
+      var paths = fs.readFileSync(arg, 'utf8')
+        .replace(/\n\n+/, '\n')
+        .replace(/^\n+/)
+        .replace(/\n+$/)
+        .split('\n');
+      excludePaths = excludePaths.concat(paths);
+      break;
     case '--import-library':
       options.importLibrary = true;
       break;
@@ -86,7 +107,7 @@ while (arg = args.shift()) {
   }
 }
 options.import = importPaths;
-
+options.exclude = excludePaths;
 
 var writeStream = process.stdout;
 if (options.outputPath) {
@@ -102,4 +123,10 @@ if (options.kernel) {
   writeStream.write(fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
 }
 
-(new Modulizer(options)).compile(writeStream, function () {});
+var writeReport = function (error, paths) {
+  if (reportPath) {
+    fs.writeFileSync(reportPath, paths.join('\n'));
+  }
+};
+
+(new Modulizer(options)).compile(writeStream, writeReport);
