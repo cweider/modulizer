@@ -206,7 +206,7 @@ http.createServer(function (request, response) {
           (types[pathutil.extname(path)] || 'text/plain') + ';'
         + ' charset=utf-8'
       });
-      response.write(prefix, 200);
+      prefix && response.write(prefix, 'utf8');
       response.end(text);
     });
   }
