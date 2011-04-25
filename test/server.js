@@ -171,9 +171,11 @@ http.createServer(function (request, response) {
     });
   } else {
     var path;
+    var prefix = '';
     if (requestPath == '/index.html') {
       path = pathutil.join(__dirname, './index.html');
     } else if (requestPath == '/kernel.js') {
+      prefix = 'var require = ';
       path = pathutil.join(__dirname, './../kernel.js');
     } else if (requestPath == '/test.js') {
       path = testFile;
@@ -204,6 +206,7 @@ http.createServer(function (request, response) {
           (types[pathutil.extname(path)] || 'text/plain') + ';'
         + ' charset=utf-8'
       });
+      response.write(prefix, 200);
       response.end(text);
     });
   }
