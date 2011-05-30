@@ -22,8 +22,23 @@
 */
 
 var http = require('http');
-var fs = require('fs');
 var pathutil = require('path');
+var Server = require('../server').Server;
+
+function VirtualFS (virtualPath) {
+  var fs = require('fs');
+  var pathutil = require('path');
+  this.readFile = function (path) {
+    var realPath = pathutil.join(virtualPath, path);
+    arguments[0] = realPath;
+    return fs.readFile.apply(fs, arguments);
+  };
+  this.stat = function (path) {
+    var realPath = pathutil.join(virtualPath, path);
+    arguments[0] = realPath;
+    return fs.stat.apply(fs, arguments);
+  };
+};
 
 var rootPath = pathutil.join(__dirname, 'root')
 var libraryPath = pathutil.join(__dirname, 'lib')
@@ -36,8 +51,8 @@ if (args.length != 3) {
 }
 
 var virtualPaths = {
-  '/root': args[0]
-, '/library': args[1]
+  '/root': new Server(new VirtualFS(args[0]))
+, '/library': new Server(new VirtualFS(args[1]))
 };
 var testFile = args[2];
 
@@ -52,9 +67,6 @@ http.createServer(function (request, response) {
     if (Object.prototype.hasOwnProperty.call(virtualPaths, virtualPath)) {
       var testPath = requestPath.slice(0, virtualPath.length);
       if (testPath == virtualPath) {
-        path = requestPath.slice(virtualPath.length, requestPath.length);
-        basePath = virtualPaths[virtualPath];
-        realPath = pathutil.join(basePath, path);
         break;
       } else {
         virtualPath = undefined;
@@ -62,114 +74,32 @@ http.createServer(function (request, response) {
     }
   }
   if (virtualPath) {
-    var findFile = function (path, suffixes, continuation) {
-      suffixes = suffixes ? suffixes.slice() : [''];
-      var ii = suffixes.length;
-      var _findFile = function (i) {
-        if (i < ii) {
-          var suffix = suffixes[i];
-          fs.stat(realPath + suffix, function (error, stats) {
-            if (!error && stats.isFile()) {
-              continuation(path + suffix);
-            } else {
-              _findFile(i+1);
-            }
-          });
-        } else {
-          continuation(null);
+    var moduleServer = virtualPaths[virtualPath];
+    requestPath = requestPath.slice(virtualPath.length);
+    request.url = request.url.slice(virtualPath.length);
+    var originalSetHeader = response.writeHead;
+    response.setHeader = function (name, value) {
+      if (name == 'Location') {
+        return originalSetHeader.call(this, "Location", virtualPath + value);
+      } else {
+        return originalSetHeader.call(this, name, value);
+      }
+    };
+    var originalWriteHead = response.writeHead;
+    response.writeHead = function () {
+      console.log(arguments[0] + ": " + virtualPath + " " + requestPath);
+      var headers = arguments[arguments.length];
+      if (typeof headers == 'object') {
+        if (headers['Location']) {
+          headers["Location"] = virtualPath + value;
         }
-      };
-      _findFile(0);
+      }
+      return originalWriteHead.apply(this, arguments);
     };
 
-    var callback;
-    if (URL.query['callback']) {
-      if (URL.query['callback'].length == 0) {
-          console.log("404: " + requestPath);
-          response.writeHead(400, {
-            'Content-Type': 'text/plain; charset=utf-8'
-          });
-          response.end("400: The parameter `callback` must be non-empty.");
-      }
-      callback = URL.query['callback'];
-    }
-
-    var suffixes;
-    if (URL.query['redirect']) {
-      if (!URL.query['redirect'].match(/^(true|false)$/i)) {
-          console.log("400: " + requestPath);
-          response.writeHead(400, {
-            'Content-Type': 'text/plain; charset=utf-8'
-          });
-          response.end("400: The parameter `redirect` must be (true|false).");
-      }
-      if (URL.query['redirect'].toLowerCase() == 'true') {
-        suffixes = ['', '.js', '/index.js'];
-      }
-    }
-
-//    var expiresDate = new Date("2020");
-//    var cacheControl = 'max-age=3456000';
-    var expiresDate = new Date("2000");
-    var cacheControl = 'max-age=-1';
-
-    findFile(path, suffixes, function (found) {
-      if (found) {
-        if (path == found) {
-          console.log("200: " + requestPath);
-          response.writeHead(200, {
-            'Content-Type': 'text/javascript; charset=utf-8'
-          , 'Cache-Control': cacheControl
-          , 'Expires': expiresDate
-          });
-          if (!callback) {
-            fs.readFile(pathutil.join(basePath, found)
-            , function (error, text) {
-                response.end(text, 'utf8');
-              }
-            );
-          } else {
-            response.write(callback + '({' + JSON.stringify(path) + ': ')
-            response.write('function (require, exports, module) {\n');
-            fs.readFile(realPath
-            , function (error, text) {
-                response.write(text, 'utf8');
-                response.write("}})\n");
-                response.end();
-              }
-            );
-          }
-        } else {
-          console.log("301: " + requestPath);
-          response.writeHead(301, {
-            'Content-Type': 'text/plain; charset=utf-8'
-          , 'Cache-Control': cacheControl
-          , 'Expires': expiresDate
-          , 'Location': virtualPath + found
-          });
-          response.end();
-        }
-      } else {
-        console.log("404: " + requestPath);
-        if (!callback) {
-          response.writeHead(404, {
-            'Content-Type': 'text/plain; charset=utf-8'
-          , 'Cache-Control': cacheControl
-          , 'Expires': expiresDate
-          });
-          response.end("404: File not found.");
-        } else {
-          response.writeHead(200, {
-            'Content-Type': 'text/javascript; charset=utf-8'
-          , 'Cache-Control': cacheControl
-          , 'Expires': expiresDate
-          });
-          response.end(callback + '({'
-            + JSON.stringify(path) + ': null})\n');
-        }
-      }
-    });
+    moduleServer.handle(request, response);
   } else {
+    var fs = require('fs');
     var path;
     var prefix = '';
     if (requestPath == '/index.html') {
