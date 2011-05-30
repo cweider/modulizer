@@ -23,7 +23,7 @@
 
 var http = require('http');
 var pathutil = require('path');
-var Server = require('../server').Server;
+var Server = require('../../server').Server;
 
 function VirtualFS (virtualPath) {
   var fs = require('fs');
@@ -106,7 +106,7 @@ http.createServer(function (request, response) {
       path = pathutil.join(__dirname, './index.html');
     } else if (requestPath == '/kernel.js') {
       prefix = 'var require = ';
-      path = pathutil.join(__dirname, './../kernel.js');
+      path = pathutil.join(__dirname, './../../kernel.js');
     } else if (requestPath == '/test.js') {
       path = testFile;
     }
