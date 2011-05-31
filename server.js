@@ -33,8 +33,9 @@ function toJSLiteral(object) {
   return result;
 }
 
-function Server(fs) {
+function Server(fs, isLibrary) {
   this.fs = fs;
+  this.isLibrary = !!isLibrary;
 }
 Server.prototype = new function () {
   function findFile(fs, path, suffixes, continuation) {
@@ -58,9 +59,13 @@ Server.prototype = new function () {
   }
 
   function handle(request, response) {
+    var fs = this.fs;
     var URL = require('url').parse(request.url, true);
     var requestPath = pathutil.normalize(URL.pathname);
-    var fs = this.fs;
+    var modulePath = requestPath;
+    if (this.isLibrary) {
+      modulePath = requestPath.replace(/^\//, '');
+    }
 
     var callback;
     if (URL.query['callback']) {
@@ -89,7 +94,7 @@ Server.prototype = new function () {
               }
             );
           } else {
-            response.write(callback + '({' + toJSLiteral(requestPath) + ': ')
+            response.write(callback + '({' + toJSLiteral(modulePath) + ': ');
             response.write('function (require, exports, module) {\n');
             fs.readFile(actualPath
             , function (error, text) {
@@ -123,7 +128,7 @@ Server.prototype = new function () {
           , 'Expires': expiresDate
           });
           response.end(callback + '({'
-            + JSON.stringify(requestPath) + ': null})\n');
+            + JSON.stringify(modulePath) + ': null})\n');
         }
       }
     });

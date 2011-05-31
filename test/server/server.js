@@ -51,8 +51,8 @@ if (args.length != 3) {
 }
 
 var virtualPaths = {
-  '/root': new Server(new VirtualFS(args[0]))
-, '/library': new Server(new VirtualFS(args[1]))
+  '/root': new Server(new VirtualFS(args[0]), false)
+, '/library': new Server(new VirtualFS(args[1]), true)
 };
 var testFile = args[2];
 
