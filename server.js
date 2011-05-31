@@ -25,6 +25,14 @@ var pathutil = require('path');
 var expiresDate = new Date("2000");
 var cacheControl = 'max-age=-1';
 
+function toJSLiteral(object) {
+  // Remember, JSON is not a subset of JavaScript. Some line terminators must
+  // be escaped manually.
+  var result = JSON.stringify(object);
+  result = result.replace('\u2028', '\\u2028').replace('\u2029', '\\u2029');
+  return result;
+}
+
 function Server(fs) {
   this.fs = fs;
 }
@@ -81,7 +89,7 @@ Server.prototype = new function () {
               }
             );
           } else {
-            response.write(callback + '({' +JSON.stringify(requestPath)+ ': ')
+            response.write(callback + '({' + toJSLiteral(requestPath) + ': ')
             response.write('function (require, exports, module) {\n');
             fs.readFile(actualPath
             , function (error, text) {
