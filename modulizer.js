@@ -198,6 +198,26 @@ function dependencies(rootPath, libraryPath, paths, callback) {
   });
 }
 
+/* All items in operand1 which are not in operand2. */
+function subtractSets(operand1, operand2) {
+  var pathSet = {};
+  operand1.forEach(function (path) {
+    pathSet[path] = true;
+  });
+  operand2.forEach(function (path) {
+    if (Object.prototype.hasOwnProperty.call(pathSet, path)) {
+      delete pathSet[path];
+    }
+  });
+  paths = [];
+  for (var path in pathSet) {
+    if (Object.prototype.hasOwnProperty.call(pathSet, path)) {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
 function Modulizer(configuration) {
   this._configuration = {
     'rootPath': null
@@ -259,22 +279,7 @@ Modulizer.prototype = new function () {
           });
 
           var compileEverything = function (paths) {
-            // Subtract excludes
-            var pathSet = {};
-            paths.forEach(function (path) {
-              pathSet[path] = true;
-            });
-            configuration.exclude.forEach(function (path) {
-              if (Object.prototype.hasOwnProperty.call(pathSet, path)) {
-                delete pathSet[path];
-              }
-            });
-            paths = [];
-            for (var path in pathSet) {
-              if (Object.prototype.hasOwnProperty.call(pathSet, path)) {
-                paths.push(path);
-              }
-            }
+            paths = subtractSets(paths, configuration.exclude);
 
             compile(
               configuration.rootPath
