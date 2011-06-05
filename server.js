@@ -25,6 +25,8 @@ var pathutil = require('path');
 var expiresDate = new Date("2000");
 var cacheControl = 'max-age=-1';
 
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
 function toJSLiteral(object) {
   // Remember, JSON is not a subset of JavaScript. Some line terminators must
   // be escaped manually.
@@ -33,39 +35,27 @@ function toJSLiteral(object) {
   return result;
 }
 
+/*
+  I implement a JavaScript module server.
+
+  Module associations:
+  Packages have many modules and modules can have many Packages. However,
+  every module can have at most one 'designated' package. Any requests for a
+  module with a designated package will be fullfilled with the contents of
+  that package (typically through redirection).
+*/
 function Server(fs, isLibrary) {
   this.fs = fs;
   this.isLibrary = !!isLibrary;
+
+  this._packageModuleMap = {};
+  this._modulePackageMap = {};
 }
 Server.prototype = new function () {
-  function findFile(fs, path, suffixes, continuation) {
-    suffixes = suffixes ? suffixes.slice() : [''];
-    var ii = suffixes.length;
-    var _findFile = function (i) {
-      if (i < ii) {
-        var suffix = suffixes[i];
-        fs.stat(path + suffix, function (error, stats) {
-          if (!error && stats.isFile()) {
-            continuation(path + suffix);
-          } else {
-            _findFile(i+1);
-          }
-        });
-      } else {
-        continuation(null);
-      }
-    };
-    _findFile(0);
-  }
-
   function handle(request, response) {
     var fs = this.fs;
     var url = require('url').parse(request.url, true);
-    var requestPath = pathutil.normalize(url.pathname);
-    var modulePath = requestPath;
-    if (this.isLibrary) {
-      modulePath = requestPath.replace(/^\//, '');
-    }
+    var modulePath = pathutil.normalize(url.pathname);
 
     var callback;
     if (url.query['callback']) {
@@ -79,42 +69,82 @@ Server.prototype = new function () {
       callback = url.query['callback'];
     }
 
-    findFile(fs, requestPath, [''], function (actualPath) {
-      if (actualPath) {
-        if (requestPath == actualPath) {
-          response.writeHead(200, {
-            'Content-Type': 'text/javascript; charset=utf-8'
-          , 'Cache-Control': cacheControl
-          , 'Expires': expiresDate
-          });
-          if (!callback) {
-            fs.readFile(actualPath
-            , function (error, text) {
-                response.end(text, 'utf8');
-              }
-            );
-          } else {
-            response.write(callback + '({' + toJSLiteral(modulePath) + ': ');
-            response.write('function (require, exports, module) {\n');
-            fs.readFile(actualPath
-            , function (error, text) {
-                response.write(text, 'utf8');
-                response.write("}})\n");
-                response.end();
-              }
-            );
-          }
-        } else {
-          response.writeHead(301, {
-            'Content-Type': 'text/plain; charset=utf-8'
-          , 'Cache-Control': cacheControl
-          , 'Expires': expiresDate
-          , 'Location': actualPath
-          });
-          response.end();
-        }
+    if (callback) {
+      // Respond JSONP style.
+      if (hasOwnProperty.call(this._modulePackageMap, modulePath) &&
+          this._modulePackageMap[modulePath] != modulePath) {
+        // Redirect to designated module path.
+        var designatedModulePath = this._modulePackageMap[modulePath];
+        url.pathname = designatedModulePath;
+        response.writeHead(301, {
+          'Content-Type': 'text/plain; charset=utf-8'
+        , 'Cache-Control': cacheControl
+        , 'Expires': expiresDate
+        , 'Location': require('url').format(url)
+        });
+        response.end();
       } else {
-        if (!callback) {
+        // Respond with contents of file. If file does not exist then its
+        // value will be null. If there is any error reading the request will
+        // be aborted
+        response.writeHead(200, {
+          'Content-Type': 'text/javascript; charset=utf-8'
+        , 'Cache-Control': cacheControl
+        , 'Expires': expiresDate
+        });
+
+        var isLibrary = this.isLibrary;
+        var modulePaths;
+        if (hasOwnProperty.call(this._packageModuleMap, modulePath)) {
+          modulePaths = this._packageModuleMap[modulePath];
+        } else {
+          modulePaths = [modulePath];
+        }
+
+        response.write(callback + '({');
+        var ii = modulePaths.length;
+        var _readEach = function (i) {
+          if (i < ii) {
+            var modulePath = modulePaths[i];
+            fs.readFile(modulePath, 'utf8', function (error, text) {
+              if (error &&
+                  ['ENOENT', 'EISDIR', 'EACCESS'].indexOf(error.code) == -1) {
+                request.connection.destroy(); // Fail hard?
+              } else {
+                if (error) {
+                  text = 'null';
+                } else {
+                  text =
+                    'function (require, exports, module) {'
+                  + ('\n' + text).replace(/\n([^\n])/g, "\n    $1")
+                  + '  }';
+                }
+                response.write(i == 0 ?  "\n  " : "\n, ");
+                if (isLibrary) {
+                  modulePath = requestPath.replace(/^\//, '');
+                }
+                response.write(toJSLiteral(modulePath) + ': ' + text);
+
+                _readEach(i+1);
+              }
+            });
+          } else {
+            response.write("\n});\n");
+            response.end();
+          }
+        };
+        _readEach(0);
+      }
+    } else {
+      // Simply respond as a normal file server would.
+      fs.readFile(modulePath, function (error, text) {
+        if (error &&
+            ['ENOENT', 'EISDIR', 'EACCESS'].indexOf(error.code) == -1) {
+          response.writeHead(500, {
+            'Content-Type': 'text/plain; charset=utf-8'
+          });
+          response.end("500: Read error.");
+        } else if (error) {
           response.writeHead(404, {
             'Content-Type': 'text/plain; charset=utf-8'
           , 'Cache-Control': cacheControl
@@ -127,14 +157,219 @@ Server.prototype = new function () {
           , 'Cache-Control': cacheControl
           , 'Expires': expiresDate
           });
-          response.end(callback + '({'
-            + JSON.stringify(modulePath) + ': null})\n');
+          response.end(text, 'utf8');
         }
+      });
+    }
+  }
+
+  /*
+    Associations describe the interfile relationships.
+
+    INPUT:
+    [ { modules:
+        [ '/module/path/1.js'
+        , '/module/path/2.js'
+        , '/module/path/3.js'
+        , '/module/path/4.js'
+        ]
       }
+    , { modules:
+        [ '/module/path/3.js'
+        , '/module/path/4.js'
+        , '/module/path/5.js'
+        ]
+      , primary: '/module/path/4.js'
+      }
+    ]
+
+    OUTPUT:
+    [ [ '/module/path/1.js'
+      , '/module/path/4.js'
+      ]
+    , { '/module/path/1.js': [0, [true, false]]
+      , '/module/path/2.js': [0, [true, false]]
+      , '/module/path/3.js': [1, [true, true]]
+      , '/module/path/4.js': [1, [true, true]]
+      , '/module/path/5.js': [1, [false, true]]
+      }
+    ]
+
+  */
+  function complexForSimpleMapping(definitions) {
+    var packages = new Array(definitions.length);
+    var associations = {};
+    var emptyAssociation = [];
+    for (var i = 0, ii = definitions.length; i < ii; i++) {
+      emptyAssociation[i] = false;
+    }
+
+    // Define associations.
+    definitions.forEach(function (definition, i) {
+      var primary = definition['primary'];
+      var modules = definition['modules'];
+
+      modules.forEach(function (module) {
+        if (!hasOwnProperty.call(associations, module)) {
+          associations[module] = [undefined, emptyAssociation.concat()];
+        }
+        associations[module][1][i] = true;
+      });
     });
+
+    // Modules specified in packages as primary get highest precedence.
+    definitions.forEach(function (definition, i) {
+      var primary = definition['primary'];
+      var modules = definition['modules'];
+      var containsPrimary = false;
+      primary && modules.forEach(function (module) {
+        if (module == primary) {
+          containsPrimary = true;
+          if (associations[module][0] !== undefined) {
+            // BAD: Two packages specify this as primary
+          } else {
+            associations[module][0] = i;
+            packages[i] = module;
+          }
+        }
+      });
+    });
+
+    // Other modules in packages specifying primary.
+    definitions.forEach(function (definition, i) {
+      var primary = definition['primary'];
+      var modules = definition['modules'];
+      primary && modules.forEach(function (module) {
+        if (associations[module][0] === undefined) {
+          associations[module][0] = i;
+          packages[i] = packages[i] || module;
+        }
+      });
+    });
+
+    // All others go to the first package using it.
+    definitions.forEach(function (definition, i) {
+      var primary = definition['primary'];
+      var modules = definition['modules'];
+      modules.forEach(function (module) {
+        if (associations[module][0] === undefined) {
+          associations[module][0] = i;
+          packages[i] = module;
+        }
+      });
+    });
+
+    return [packages, associations]
+  }
+
+  /*
+    Produce fully structured module mapings from association description.
+
+    INPUT:
+    [ [ '/module/path/1.js'
+      , '/module/path/4.js'
+      ]
+    , { '/module/path/1.js': [0, [true, false]]
+      , '/module/path/2.js': [0, [true, false]]
+      , '/module/path/3.js': [1, [true, true]]
+      , '/module/path/4.js': [1, [true, true]]
+      , '/module/path/5.js': [1, [false, true]]
+      }
+    ]
+
+    OUTPUT:
+    [ { '/module/path/1.js':
+        [ '/module/path/1.js'
+        , '/module/path/2.js'
+        , '/module/path/3.js'
+        , '/module/path/4.js'
+        ]
+      , '/module/path/4.js':
+        [ '/module/path/3.js'
+        , '/module/path/4.js'
+        , '/module/path/5.js'
+        ]
+      }
+    , { '/module/path/1.js': '/module/path/1.js'
+      , '/module/path/2.js': '/module/path/1.js'
+      , '/module/path/3.js': '/module/path/4.js'
+      , '/module/path/4.js': '/module/path/4.js'
+      , '/module/path/5.js': '/module/path/4.js'
+      }
+    ]
+  */
+  function associationsForComplexMapping(packages, associations) {
+    var packageSet = {};
+    packages.forEach(function (package, i) {
+      if (package === undefined) {
+        // BAD: Package has no purpose.
+      } else if (hasOwnProperty.call(packageSet, package)) {
+        // BAD: Duplicate package.
+      } else if (!hasOwnProperty.call(associations, package)) {
+        // BAD: Package primary doesn't exist for this package
+      } else if (associations[package][0] != i) {
+        // BAD: Package primary doesn't agree
+      }
+      packageSet[package] = true;
+    })
+
+    var packageModuleMap = {};
+    var modulePackageMap = {};
+    for (var path in associations) {
+      if (hasOwnProperty.call(associations, path)) {
+        var association = associations[path];
+
+        modulePackageMap[path] = packages[association[0]];
+        association[1].forEach(function (include, i) {
+          if (include) {
+            var package = packages[i];
+            if (!hasOwnProperty.call(packageModuleMap, package)) {
+              packageModuleMap[package] = [];
+            }
+            packageModuleMap[package].push(path);
+          }
+        });
+      }
+    }
+
+    return [packageModuleMap, modulePackageMap];
+  }
+
+  /*
+    I will use this to set my module associations. When a request is recieved
+    the package corresponding to the requested module in `modulePackageMap` is
+    returned. Typically this will be done through a HTTP redirect if the
+    requested module is not the designated module for the package.
+
+    [ { '/module/path/1.js':
+        [ '/module/path/1.js'
+        , '/module/path/2.js'
+        , '/module/path/3.js'
+        , '/module/path/4.js'
+        ]
+      , '/module/path/4.js':
+        [ '/module/path/3.js'
+        , '/module/path/4.js'
+        , '/module/path/5.js'
+        ]
+      }
+    , { '/module/path/1.js': '/module/path/1.js'
+      , '/module/path/2.js': '/module/path/1.js'
+      , '/module/path/3.js': '/module/path/4.js'
+      , '/module/path/4.js': '/module/path/4.js'
+      , '/module/path/5.js': '/module/path/4.js'
+      }
+    ]
+  */
+  function setModuleMappings(packageModuleMap, modulePackageMap) {
+    this._packageModuleMap = packageModuleMap;
+    this._modulePackageMap = modulePackageMap;
   }
 
   this.handle = handle;
+  this.complexForSimpleMapping = complexForSimpleMapping;
+  this.associationsForComplexMapping = associationsForComplexMapping;
+  this.setModuleMappings = setModuleMappings;
 }();
 
 exports.Server = Server;
