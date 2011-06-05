@@ -204,6 +204,26 @@ function compile(rootPath, libraryPath, paths,
   );
 }
 
+/* Retrieve the depencies of the specified files. */
+function dependencies(rootPath, libraryPath, paths, callback) {
+  var mockRequire = asyncRequire.requireForPaths(rootPath, libraryPath);
+
+  mockRequire.emitter.addListener('idle', function () {
+    var modules = mockRequire._modules;
+    var paths = [];
+    for (var path in modules) {
+      if (Object.prototype.hasOwnProperty.call(modules, path)) {
+        paths.push(path);
+      }
+    }
+    callback(paths);
+  });
+
+  paths.forEach(function (path) {
+    mockRequire(path, function () {});
+  });
+}
+
 function Modulizer(configuration) {
   this._configuration = {
     'rootPath': null
@@ -305,24 +325,8 @@ Modulizer.prototype = new function () {
           };
 
           if (configuration.importDependencies) {
-            var mockRequire = asyncRequire.requireForPaths(
-              configuration.rootPath, configuration.libraryPath);
-
-            mockRequire.emitter.addListener('idle', function () {
-              var modules = mockRequire._modules;
-              var paths = [];
-              for (var path in modules) {
-                if (Object.prototype.hasOwnProperty.call(modules, path)) {
-                  paths.push(path);
-                }
-              }
-              compileEverything(paths);
-            });
-
-            paths.forEach(function (path) {
-              mockRequire(path, function () {});
-            });
-
+            dependencies(configuration.rootPath, configuration.libraryPath,
+              paths, compileEverything)
           } else {
             compileEverything(paths);
           }
