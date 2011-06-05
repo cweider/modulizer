@@ -149,42 +149,15 @@ function compile(rootPath, libraryPath, paths,
     callback(undefined, modulePaths);
   }
 
-  // Sort paths by modulePath.
-  var pathMap = {};
-  paths.forEach(function (path) {
-    relatedPaths(path).forEach(function (path) {
-      pathMap[path] =
-        systemToModulePath(rootPath, libraryPath, path);
-    });
-  });
-
-  var path_paths = [];
-  for (var path in pathMap) {
-    if (Object.prototype.hasOwnProperty.call(pathMap, path)) {
-      path_paths.push([path, pathMap[path]]);
-    }
-  }
-  path_paths = path_paths.sort(function (a, b) {
-    if (a[1] > b[1]) {
-      return 1;
-    } else if (a[1] < b[1]) {
-      return -1;
-    } else {
-      return 0;
-    }
-  });
-
-  var paths = [];
-  var modulePaths = [];
-  path_paths.forEach(function (path_path) {
-    paths.push(path_path[0]);
-    modulePaths.push(path_path[1]);
+  var modulePaths = paths.sort();
+  var sysPaths = modulePaths.map(function (path) {
+    return moduleToSystemPath(rootPath, libraryPath, path);
   });
 
   // Read the files in order and write them to the stream.
   writeStream.write((globalKeyPath || 'require') + '.define({');
   var initial = true;
-  readEach(paths,
+  readEach(sysPaths,
     function (path, text) {
       if (text === null) {
         text = 'null';
@@ -193,8 +166,9 @@ function compile(rootPath, libraryPath, paths,
         text = 'function (require, exports, module) {' + text + '  }';
       }
 
+      modulePath = systemToModulePath(rootPath, libraryPath, path);
       writeStream.write((initial ? !(initial = false) && "\n  " : "\n, ")
-        + JSON.stringify(pathMap[path]) + ": " + text
+        + JSON.stringify(modulePath) + ": " + text
         );
     }
   , function () {
@@ -285,9 +259,7 @@ Modulizer.prototype = new function () {
           });
 
           var compileEverything = function (paths) {
-            // Do a bunch of work to remove included files from set.
-            // TODO: All of this System <-> Module conversion and mapping
-            // stuff should be possible to collapse. Meh.
+            // Subtract excludes
             var pathSet = {};
             paths.forEach(function (path) {
               pathSet[path] = true;
@@ -303,14 +275,6 @@ Modulizer.prototype = new function () {
                 paths.push(path);
               }
             }
-
-            // Convert back to system paths.
-            paths = paths.map(function (path) {
-              return moduleToSystemPath(
-                  configuration.rootPath
-                , configuration.libraryPath
-                , path);
-            });
 
             compile(
               configuration.rootPath
