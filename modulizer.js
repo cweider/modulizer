@@ -224,7 +224,7 @@ function Modulizer(configuration) {
 
   // Normalize paths
   var pathify = function (path) {
-    return pathutil.normalize(pathutil.resolve(path) + '/');
+    return path && pathutil.normalize(pathutil.resolve(path) + '/');
   }
   configuration.libraryPath = pathify(configuration.libraryPath);
   configuration.rootPath = pathify(configuration.rootPath);
