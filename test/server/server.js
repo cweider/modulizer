@@ -24,6 +24,7 @@
 var http = require('http');
 var pathutil = require('path');
 var Server = require('../../server').Server;
+var fs = require('fs');
 
 function VirtualFS (virtualPath) {
   var fs = require('fs');
@@ -45,8 +46,8 @@ var libraryPath = pathutil.join(__dirname, 'lib')
 var port = 1
 
 var args = process.argv.slice(2);
-if (args.length != 3) {
-  console.error("Arguments: root, lib, test");
+if (args.length != 3 && args.length != 4) {
+  console.error("Arguments: root, lib, test, root_associations");
   process.exit(1);
 }
 
@@ -55,6 +56,12 @@ var virtualPaths = {
 , '/library': new Server(new VirtualFS(args[1]), true)
 };
 var testFile = args[2];
+
+var rootAssociationFile = args[3];
+if (rootAssociationFile) {
+  var association = eval(fs.readFileSync(rootAssociationFile, 'utf8'));
+  virtualPaths['/root'].setModuleMappings(association[0], association[1]);
+}
 
 http.createServer(function (request, response) {
   var URL = require('url').parse(request.url, true);
