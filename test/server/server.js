@@ -87,13 +87,15 @@ http.createServer(function (request, response) {
     };
     var originalWriteHead = response.writeHead;
     response.writeHead = function () {
-      console.log(arguments[0] + ": " + virtualPath + " " + requestPath);
-      var headers = arguments[arguments.length];
+      var logText = arguments[0] + ": " + virtualPath + " " + requestPath;
+      var headers = arguments[arguments.length-1];
       if (typeof headers == 'object') {
         if (headers['Location']) {
-          headers["Location"] = virtualPath + value;
+          headers["Location"] = virtualPath + headers['Location'];
+          logText += " -> " + headers['Location'];
         }
       }
+      console.log(logText);
       return originalWriteHead.apply(this, arguments);
     };
 
