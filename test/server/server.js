@@ -51,6 +51,10 @@ if (args.length != 3 && args.length != 4) {
   process.exit(1);
 }
 
+var useUglify = true;
+var Uglify = undefined;
+try { Uglify = require('uglify-js'); } catch (e) {}
+
 var virtualPaths = {
   '/root': new Server(new VirtualFS(args[0]), false)
 , '/library': new Server(new VirtualFS(args[1]), true)
@@ -85,11 +89,46 @@ http.createServer(function (request, response) {
     requestPath = requestPath.slice(virtualPath.length);
     request.url = request.url.slice(virtualPath.length);
     var originalSetHeader = response.writeHead;
+    var originalWrite = response.write;
+    var originalEnd = response.end;
+    var buffer = '';
+    var isJavaScript = false;
+
+    if (useUglify && Uglify) {
+      response.write = function (chunk, encoding) {
+        if (chunk && isJavaScript) {
+          buffer += chunk.toString(encoding);
+        } else {
+          originalWrite.call(response, chunk, encoding);
+        }
+      }
+      response.end = function (chunk, encoding) {
+        if (isJavaScript) {
+          if (chunk) {
+            buffer += chunk.toString(encoding);
+          }
+          var jsp = require("uglify-js").parser;
+          var pro = require("uglify-js").uglify;
+
+          var ast = jsp.parse(buffer);
+          ast = pro.ast_mangle(ast);
+          ast = pro.ast_squeeze(ast);
+          var final_code = pro.gen_code(ast);
+          originalEnd.call(response, final_code, 'utf8');
+        } else {
+          originalEnd.call(response, chunk, encoding);
+        }
+      }
+    }
+
     response.setHeader = function (name, value) {
       if (name == 'Location') {
         return originalSetHeader.call(this, "Location", virtualPath + value);
       } else {
         return originalSetHeader.call(this, name, value);
+      }
+      if (name == 'Content-Type' && value.match(/^text\/javascript(;.*)?$/)) {
+        isJavaScript = true;
       }
     };
     var originalWriteHead = response.writeHead;
@@ -100,6 +139,10 @@ http.createServer(function (request, response) {
         if (headers['Location']) {
           headers["Location"] = virtualPath + headers['Location'];
           logText += " -> " + headers['Location'];
+        }
+        if (headers['Content-Type'] &&
+            headers['Content-Type'].match(/^text\/javascript(;.*)?$/)) {
+          isJavaScript = true;
         }
       }
       console.log(logText);
