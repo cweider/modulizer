@@ -21,10 +21,6 @@
 */
 
 var pathutil = require('path');
-
-var expiresDate = new Date("2000");
-var cacheControl = 'max-age=-1';
-
 var hasOwnProperty = Object.prototype.hasOwnProperty;
 
 function toJSLiteral(object) {
@@ -33,6 +29,12 @@ function toJSLiteral(object) {
   var result = JSON.stringify(object);
   result = result.replace('\u2028', '\\u2028').replace('\u2029', '\\u2029');
   return result;
+}
+function cacheControl(seconds) {
+  return 'max-age=' + seconds;
+}
+function expires(seconds) {
+  return (new Date((new Date()).getTime() + seconds*1000)).toUTCString();
 }
 
 /*
@@ -47,6 +49,7 @@ function toJSLiteral(object) {
 function Server(fs, isLibrary) {
   this.fs = fs;
   this.isLibrary = !!isLibrary;
+  this._cachePeriod = 180*24*60*60;
 
   this._packageModuleMap = {};
   this._modulePackageMap = {};
@@ -56,6 +59,7 @@ Server.prototype = new function () {
     var fs = this.fs;
     var url = require('url').parse(request.url, true);
     var modulePath = pathutil.normalize(url.pathname);
+    var cachePeriod = this._cachePeriod;
 
     var callback;
     if (url.query['callback']) {
@@ -78,8 +82,8 @@ Server.prototype = new function () {
         url.pathname = designatedModulePath;
         response.writeHead(301, {
           'Content-Type': 'text/plain; charset=utf-8'
-        , 'Cache-Control': cacheControl
-        , 'Expires': expiresDate
+        , 'Cache-Control': cacheControl(cachePeriod)
+        , 'Expires': expires(cachePeriod)
         , 'Location': require('url').format(url)
         });
         response.end();
@@ -89,8 +93,8 @@ Server.prototype = new function () {
         // be aborted
         response.writeHead(200, {
           'Content-Type': 'text/javascript; charset=utf-8'
-        , 'Cache-Control': cacheControl
-        , 'Expires': expiresDate
+        , 'Cache-Control': cacheControl(cachePeriod)
+        , 'Expires': expires(cachePeriod)
         });
 
         var isLibrary = this.isLibrary;
@@ -147,15 +151,15 @@ Server.prototype = new function () {
         } else if (error) {
           response.writeHead(404, {
             'Content-Type': 'text/plain; charset=utf-8'
-          , 'Cache-Control': cacheControl
-          , 'Expires': expiresDate
+          , 'Cache-Control': cacheControl(cachePeriod)
+          , 'Expires': expires(cachePeriod)
           });
           response.end("404: File not found.");
         } else {
           response.writeHead(200, {
             'Content-Type': 'text/javascript; charset=utf-8'
-          , 'Cache-Control': cacheControl
-          , 'Expires': expiresDate
+          , 'Cache-Control': cacheControl(cachePeriod)
+          , 'Expires': expires(cachePeriod)
           });
           response.end(text, 'utf8');
         }
