@@ -60,23 +60,23 @@ Server.prototype = new function () {
 
   function handle(request, response) {
     var fs = this.fs;
-    var URL = require('url').parse(request.url, true);
-    var requestPath = pathutil.normalize(URL.pathname);
+    var url = require('url').parse(request.url, true);
+    var requestPath = pathutil.normalize(url.pathname);
     var modulePath = requestPath;
     if (this.isLibrary) {
       modulePath = requestPath.replace(/^\//, '');
     }
 
     var callback;
-    if (URL.query['callback']) {
-      if (URL.query['callback'].length == 0) {
+    if (url.query['callback']) {
+      if (url.query['callback'].length == 0) {
         response.writeHead(400, {
           'Content-Type': 'text/plain; charset=utf-8'
         });
         response.end("400: The parameter `callback` must be non-empty.");
         return;
       }
-      callback = URL.query['callback'];
+      callback = url.query['callback'];
     }
 
     findFile(fs, requestPath, [''], function (actualPath) {
