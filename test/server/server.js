@@ -24,6 +24,7 @@
 var http = require('http');
 var pathutil = require('path');
 var Server = require('../../server').Server;
+var Associator = require('../../associator').Associator;
 var fs = require('fs');
 
 function VirtualFS (virtualPath) {
@@ -64,7 +65,7 @@ var testFile = args[2];
 var rootAssociationFile = args[3];
 if (rootAssociationFile) {
   var association = eval(fs.readFileSync(rootAssociationFile, 'utf8'));
-  virtualPaths['/root'].setModuleMappings(association[0], association[1]);
+  virtualPaths['/root'].setAssociator(new Associator(association));
 }
 
 http.createServer(function (request, response) {
