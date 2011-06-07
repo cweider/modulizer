@@ -343,7 +343,7 @@
       if (!(continuation instanceof Function)) {
         throw new Error("Argument Error: continuation must be a function.");
       }
-      moduleAtPath(path, continuation);
+      moduleAtPath(path, function (module) {continuation(module.exports)});
     }
   }
 
