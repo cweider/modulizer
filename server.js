@@ -47,8 +47,8 @@ function expires(seconds) {
   that package (typically through redirection).
 */
 function Server(fs, isLibrary) {
-  this.fs = fs;
-  this.isLibrary = !!isLibrary;
+  this._fs = fs;
+  this._isLibrary = !!isLibrary;
   this._cachePeriod = 180*24*60*60;
 
   this._packageModuleMap = {};
@@ -56,7 +56,7 @@ function Server(fs, isLibrary) {
 }
 Server.prototype = new function () {
   function handle(request, response) {
-    var fs = this.fs;
+    var fs = this._fs;
     var url = require('url').parse(request.url, true);
     var modulePath = pathutil.normalize(url.pathname);
     var cachePeriod = this._cachePeriod;
@@ -97,7 +97,7 @@ Server.prototype = new function () {
         , 'Expires': expires(cachePeriod)
         });
 
-        var isLibrary = this.isLibrary;
+        var isLibrary = this._isLibrary;
         var modulePaths;
         if (hasOwnProperty.call(this._packageModuleMap, modulePath)) {
           modulePaths = this._packageModuleMap[modulePath];
