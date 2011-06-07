@@ -350,11 +350,35 @@
   function requireRelative(basePath, qualifiedPath, continuation) {
     qualifiedPath = qualifiedPath.toString();
     var path = normalizePath(fullyQualifyPath(qualifiedPath, basePath));
+    return requireBase(path, continuation);
+  }
+
+  function requireRelativeN(basePath, qualifiedPaths, continuation) {
+    if (!(continuation instanceof Function)) {
+      throw new Error("Final argument must be a continuation.");
+    } else {
+      var results = [];
+      function _require(result) {
+        results.push(result);
+        if (qualifiedPaths.length > 0) {
+          requireRelative(basePath, qualifiedPaths.shift(), _require);
+        } else {
+          continuation.apply(this, results);
+        }
+      }
+      return requireRelative(basePath, qualifiedPaths.shift(), _require);
+    }
   }
 
   var requireRelativeTo = function (basePath) {
     function require(qualifiedPath, continuation) {
-      return requireRelative(basePath, qualifiedPath, continuation);
+      if (arguments.length > 2) {
+        var qualifiedPaths = Array.prototype.slice.call(arguments, 0, -1);
+        var continuation = arguments[arguments.length-1];
+        return requireRelativeN(basePath, qualifiedPaths, continuation);
+      } else {
+        return requireRelative(basePath, qualifiedPath, continuation);
+      }
     }
     require.main = main;
 
