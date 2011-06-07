@@ -347,10 +347,14 @@
     }
   }
 
+  function requireRelative(basePath, qualifiedPath, continuation) {
+    qualifiedPath = qualifiedPath.toString();
+    var path = normalizePath(fullyQualifyPath(qualifiedPath, basePath));
+  }
+
   var requireRelativeTo = function (basePath) {
     function require(qualifiedPath, continuation) {
-      var path = normalizePath(fullyQualifyPath(qualifiedPath, basePath));
-      return requireBase(path, continuation);
+      return requireRelative(basePath, qualifiedPath, continuation);
     }
     require.main = main;
 
