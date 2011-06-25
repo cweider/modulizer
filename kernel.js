@@ -34,6 +34,8 @@
   var rootURI = undefined;
   var libraryURI = undefined;
 
+  var JSONP_TIMEOUT = 60 * 1000;
+
   /* Paths */
   function normalizePath(path) {
     var pathComponents1 = path.split('/');
@@ -197,6 +199,17 @@
     script.type = "text/javascript";
     script.src = URIForModulePath(path)
       + '?callback=' + encodeURIComponent(globalKeyPath + '.define');
+
+    // Handle failure of JSONP request.
+    if (JSONP_TIMEOUT < Infinity) {
+      var timeoutId = setTimeout(function () {
+        timeoutId = undefined;
+        install(path, null);
+      }, JSONP_TIMEOUT);
+      installWaiters[path].unshift(function () {
+        timeoutId === undefined && clearTimeout(timeoutId);
+      });
+    }
 
     head.insertBefore(script, head.firstChild);
   }
