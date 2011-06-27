@@ -91,6 +91,8 @@ Server.prototype = new function () {
         , 'Expires': expires(cachePeriod)
         , 'Location': require('url').format(url)
         });
+        response.write("301: Resource moved permanantly to "
+          + require('url').format(url));
         response.end();
       } else {
         // Respond with contents of file. If file does not exist then its
