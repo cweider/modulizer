@@ -97,7 +97,7 @@ Server.prototype = new function () {
         // value will be null. If there is any error reading the request will
         // be aborted
         response.writeHead(200, {
-          'Content-Type': 'text/javascript; charset=utf-8'
+          'Content-Type': 'application/javascript; charset=utf-8'
         , 'Cache-Control': cacheControl(cachePeriod)
         , 'Expires': expires(cachePeriod)
         });
@@ -162,7 +162,7 @@ Server.prototype = new function () {
           response.end("404: File not found.");
         } else {
           response.writeHead(200, {
-            'Content-Type': 'text/javascript; charset=utf-8'
+            'Content-Type': 'application/javascript; charset=utf-8'
           , 'Cache-Control': cacheControl(cachePeriod)
           , 'Expires': expires(cachePeriod)
           });
