@@ -123,13 +123,14 @@ http.createServer(function (request, response) {
     }
 
     response.setHeader = function (name, value) {
+      if (name == 'Content-Type' && value.match(/^application\/(javascript|json)(;.*)?$/)) {
+        isJavaScript = true;
+      }
+
       if (name == 'Location') {
         return originalSetHeader.call(this, "Location", virtualPath + value);
       } else {
         return originalSetHeader.call(this, name, value);
-      }
-      if (name == 'Content-Type' && value.match(/^text\/javascript(;.*)?$/)) {
-        isJavaScript = true;
       }
     };
     var originalWriteHead = response.writeHead;
@@ -141,8 +142,9 @@ http.createServer(function (request, response) {
           headers["Location"] = virtualPath + headers['Location'];
           logText += " -> " + headers['Location'];
         }
+
         if (headers['Content-Type'] &&
-            headers['Content-Type'].match(/^text\/javascript(;.*)?$/)) {
+            headers['Content-Type'].match(/^application\/(javascript|json)(;.*)?$/)) {
           isJavaScript = true;
         }
       }
@@ -190,6 +192,16 @@ http.createServer(function (request, response) {
         + ' charset=utf-8'
       });
       prefix && response.write(prefix, 'utf8');
+      if (pathutil.extname(path) == '.js') {
+        if (useUglify && Uglify) {
+          var jsp = require("uglify-js").parser;
+          var pro = require("uglify-js").uglify;
+          var ast = jsp.parse(text);
+          ast = pro.ast_mangle(ast);
+          ast = pro.ast_squeeze(ast);
+          text = pro.gen_code(ast);
+        }
+      }
       response.end(text);
     });
   }
