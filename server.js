@@ -132,7 +132,7 @@ Server.prototype = new function () {
                 }
                 response.write(i == 0 ?  "\n  " : "\n, ");
                 if (isLibrary) {
-                  modulePath = requestPath.replace(/^\//, '');
+                  modulePath = modulePath.replace(/^\//, '');
                 }
                 response.write(toJSLiteral(modulePath) + ': ' + text);
 

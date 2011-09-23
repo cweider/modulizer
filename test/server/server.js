@@ -52,7 +52,7 @@ if (args.length != 3 && args.length != 4) {
   process.exit(1);
 }
 
-var useUglify = true;
+var useUglify = false;
 var Uglify = undefined;
 try { Uglify = require('uglify-js'); } catch (e) {}
 
@@ -208,4 +208,4 @@ http.createServer(function (request, response) {
 
 }).listen(8124);
 
-console.log('Server running at http://127.0.0.1:8124/');
+console.log('http://127.0.0.1:8124/index.html');
