@@ -183,7 +183,7 @@ function dependencies(rootPath, libraryPath, paths, callback) {
   var mockRequire = asyncRequire.requireForPaths(rootPath, libraryPath);
 
   mockRequire.emitter.addListener('idle', function () {
-    var modules = mockRequire._modules;
+    var modules = mockRequire._definitions;
     var paths = [];
     for (var path in modules) {
       if (Object.prototype.hasOwnProperty.call(modules, path)) {

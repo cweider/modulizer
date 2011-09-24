@@ -1,10 +1,11 @@
 (function () {
   /*!
+
     Copyright (C) 2011 Chad Weider
 
-    This software is provided 'as-is', without any express or implied warranty.
-    In no event will the authors be held liable for any damages arising from
-    the use of this software.
+    This software is provided 'as-is', without any express or implied
+    warranty. In no event will the authors be held liable for any damages
+    arising from the use of this software.
 
     Permission is granted to anyone to use this software for any purpose,
     including commercial applications, and to alter it and redistribute it
@@ -21,12 +22,14 @@
   */
 
   /* Storage */
-  var main = null;
-  var modules = {};
-  var loadingModules = {};
-  var installWaiters = {};
-  var installRequests = [];
-  var installRequest = undefined;
+  var main = null; // Reference to main module in `modules`.
+  var modules = {}; // Repository of module objects build from `definitions`.
+  var definitions = {}; // Functions that construct `modules`.
+  var loadingModules = {}; // Locks for detecting circular dependencies.
+  var definitionWaiters = {}; // Locks for clearing duplicate requires.
+  var fetchRequests = []; // Queue of pending requests.
+  var currentRequests = 0; // Synchronization for parallel requests.
+  var maximumRequests = 2;
 
   var syncLock = undefined;
   var globalKeyPath = undefined;
@@ -36,7 +39,64 @@
 
   var JSONP_TIMEOUT = 60 * 1000;
 
-  /* Paths */
+  var CircularDependencyError = function () {Error.apply(this, arguments)};
+  CircularDependencyError.prototype = new Error();
+
+  /* Utility */
+  function hasOwnProperty(object, key) {
+    // Object-independent because an object may define `hasOwnProperty`.
+    return Object.prototype.hasOwnProperty.call(object, key);
+  }
+
+  // See RFC 2396 Appendix B
+  var URI_EXPRESSION =
+      /^(([^:\/?#]+):)?(\/\/([^\/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?/;
+  function parseURI(uri) {
+    var match = uri.match(URI_EXPRESSION);
+    var location = match && {
+      scheme: match[2],
+      host: match[4],
+      path: match[5],
+      query: match[7],
+      fragment: match[9]
+    };
+    return location;
+  }
+
+  function joinURI(location) {
+    var uri = "";
+    if (location.scheme)
+      uri += location.scheme + ':';
+    if (location.host)
+      uri += "//" + location.host
+    if (location.path)
+      uri += location.path
+    if (location.query)
+      uri += "?" + location.query
+    if (uri.fragment)
+      uri += "#" + location.fragment
+
+    return uri;
+  }
+
+  function isSameDomain(uri) {
+    var host_uri =
+      (typeof location == "undefined") ? {} : parseURI(location.toString());
+    var uri = parseURI(uri);
+
+    return (uri.scheme === host_uri.scheme) && (uri.host === host_uri.host);
+  }
+
+  function mirroredURIForURI(uri) {
+    var host_uri =
+      (typeof location == "undefined") ? {} : parseURI(location.toString());
+    var uri = parseURI(uri);
+
+    uri.scheme = host_uri.scheme;
+    uri.host = host_uri.host;
+    return joinURI(uri);
+  }
+
   function normalizePath(path) {
     var pathComponents1 = path.split('/');
     var pathComponents2 = [];
@@ -46,6 +106,10 @@
       component = pathComponents1[i];
       switch (component) {
         case '':
+          if (i == ii - 1) {
+            pathComponents2.push(component);
+            break;
+          }
         case '.':
           if (i == 0) {
             pathComponents2.push(component);
@@ -116,6 +180,16 @@
   }
 
   /* Remote */
+  function setRequestMaximum (value) {
+    value == parseInt(value);
+    if (value > 0) {
+      maximumRequests = value;
+      checkScheduledfetchDefines();
+    } else {
+      throw new Error("Argument Error: value must be a positive integer.")
+    }
+  }
+
   function setGlobalKeyPath (value) {
     globalKeyPath = value;
   }
@@ -140,63 +214,95 @@
     return xmlhttp;
   }
 
-  /* Modules */
-  function fetchModule(path, continuation) {
-    if (Object.prototype.hasOwnProperty.call(installWaiters, path)) {
-      installWaiters[path].push(continuation);
-    } else {
-      installWaiters[path] = [continuation];
-      scheduleFetchInstall(path);
-    }
-  }
-
-  function scheduleFetchInstall(path) {
-    installRequests.push(path);
-    if (installRequest === undefined) {
-      continueScheduledFetchInstalls();
-    }
-  }
-
-  function continueScheduledFetchInstalls() {
-    if (installRequests.length > 0) {
-      installRequest = installRequests.pop();
-      var fetchFunc = globalKeyPath ? fetchInstallJSONP : fetchInstallXHR;
-      fetchFunc(installRequest);
-    }
-  }
-
-  function fetchInstallXHR(path) {
-    var request = createXMLHTTPObject();
+  function getXHR(uri, async, callback, request) {
+    var request = request || createXMLHTTPObject();
     if (!request) {
       throw new Error("Error making remote request.")
     }
 
-    request.open('GET', URIForModulePath(path), true);
-    request.onreadystatechange = function (event) {
-      if (request.readyState == 4) {
-        if (request.status == 200) {
-          // Build module constructor.
-          var response = new Function(
-              'return function (require, exports, module) {\n'
-                + request.responseText + '};\n')();
-
-          install(path, response);
-        } else {
-          install(path, null);
-        }
+    function onComplete(request) {
+      // Build module constructor.
+      if (request.status == 200) {
+        callback(undefined, request.responseText);
+      } else {
+        callback(true, undefined);
       }
-    };
-    request.send(null);
+    }
+
+    request.open('GET', uri, !!(async));
+    if (async) {
+      request.onreadystatechange = function (event) {
+        if (request.readyState == 4) {
+          onComplete(request);
+        }
+      };
+      request.send(null);
+    } else {
+      request.send(null);
+      onComplete(request);
+    }
   }
 
-  function fetchInstallJSONP(path) {
+  function getXDR(uri, callback) {
+    var xdr = new XDomainRequest();
+    xdr.open('GET', uri);
+    xdr.error(function () {
+      callback(true, undefined);
+    });
+    xdr.onload(function () {
+      callback(undefined, request.responseText);
+    });
+    xdr.send();
+  }
+
+  function fetchDefineXHR(path, async) {
+    // If cross domain and request doesn't support such requests, go straight
+    // to mirrioring.
+
+    var _globalKeyPath = globalKeyPath;
+
+    var callback = function (error, text) {
+      if (error) {
+        define(path, null);
+      } else {
+        if (_globalKeyPath) {
+          var code = new Function(text);
+          code();
+        } else {
+          var definition = new Function(
+              'return function (require, exports, module) {\n'
+                + text + '};\n')();
+          define(path, definition);
+        }
+      }
+    }
+
+    var uri = URIForModulePath(path);
+    if (_globalKeyPath) {
+      uri += '?callback=' + encodeURIComponent(globalKeyPath + '.define');
+    }
+    if (isSameDomain(uri)) {
+      getXHR(uri, async, callback);
+    } else {
+      var request = createXMLHTTPObject();
+      if (request && request.withCredentials !== undefined) {
+        getXHR(uri, async, callback, request);
+      } else if (async && (typeof XDomainRequest != "undefined")) {
+        getXDR(uri, callback);
+      } else {
+        getXHR(mirroredURIForURI(uri), async, callback);
+      }
+    }
+  }
+
+  function fetchDefineJSONP(path) {
     var head = document.head
       || document.getElementsByTagName('head')[0]
       || document.documentElement;
     var script = document.createElement('script');
     script.async = "async";
     script.defer = "defer";
-    script.type = "text/javascript";
+    script.type = "application/javascript";
     script.src = URIForModulePath(path)
       + '?callback=' + encodeURIComponent(globalKeyPath + '.define');
 
@@ -204,9 +310,9 @@
     if (JSONP_TIMEOUT < Infinity) {
       var timeoutId = setTimeout(function () {
         timeoutId = undefined;
-        install(path, null);
+        define(path, null);
       }, JSONP_TIMEOUT);
-      installWaiters[path].unshift(function () {
+      definitionWaiters[path].unshift(function () {
         timeoutId === undefined && clearTimeout(timeoutId);
       });
     }
@@ -214,132 +320,194 @@
     head.insertBefore(script, head.firstChild);
   }
 
-  function fetchModuleSync(path, continuation) {
-    var request = createXMLHTTPObject();
-    if (!request) {
-      throw new Error("Error making remote request.")
-    }
-
-    request.open('GET', URIForModulePath(path), false);
-    request.send(null);
-    if (request.status == 200) {
-      // Build module constructor.
-      var response = new Function(
-          'return function (require, exports, module) {\n'
-            + request.responseText + '};\n')();
-
-      install(path, response);
+  /* Modules */
+  function fetchModule(path, continuation) {
+    if (hasOwnProperty(definitionWaiters, path)) {
+      definitionWaiters[path].push(continuation);
     } else {
-      install(path, null);
+      definitionWaiters[path] = [continuation];
+      schedulefetchDefine(path);
     }
+  }
+
+  function schedulefetchDefine(path) {
+    fetchRequests.push(path);
+    checkScheduledfetchDefines();
+  }
+
+  function checkScheduledfetchDefines() {
+    if (fetchRequests.length > 0 && currentRequests < maximumRequests) {
+      var fetchRequest = fetchRequests.pop();
+      currentRequests++;
+      definitionWaiters[fetchRequest].unshift(function () {
+        currentRequests--;
+        checkScheduledfetchDefines();
+      });
+      if (globalKeyPath
+        && ((typeof document != undefined)
+          && document.readyState && document.readyState != 'loading')) {
+        fetchDefineJSONP(fetchRequest)
+      } else {
+        fetchDefineXHR(fetchRequest, true);
+      }
+    }
+  }
+
+  function fetchModuleSync(path, continuation) {
+    fetchDefineXHR(path, false);
     continuation();
   }
 
-  function loadModule(path) {
-    var module = modules[path];
+  function moduleIsLoaded(path) {
+    return hasOwnProperty(modules, path);
+  }
+
+  function loadModule(path, continuation) {
     // If it's a function then it hasn't been exported yet. Run function and
     //  then replace with exports result.
-    if (module instanceof Function) {
-      if (Object.prototype.hasOwnProperty.call(loadingModules, path)) {
-        throw new Error("Encountered circurlar dependency.");
+    if (!moduleIsLoaded(path)) {
+      if (hasOwnProperty(loadingModules, path)) {
+        var error =
+            new CircularDependencyError("Encountered circular dependency.")
+        continuation(error, undefined);
+      } else if (!moduleIsDefined(path)) {
+        var error = new Error("Attempt to load undefined module.")
+        continuation(error, undefined);
+      } else if (definitions[path] === null) {
+        continuation(undefined, null);
+      } else {
+        var definition = definitions[path];
+        var _module = {id: path, exports: {}};
+        var _require = requireRelativeTo(path.replace(/[^\/]+$/,''));
+        if (!main) {
+          main = _module;
+        }
+        try {
+          loadingModules[path] = true;
+          definition(_require, _module.exports, _module);
+          modules[path] = _module;
+          delete loadingModules[path];
+          continuation(undefined, _module);
+        } catch (error) {
+          delete loadingModules[path];
+          continuation(error, undefined);
+        }
       }
-      var _module = {id: path, exports: {}};
-      var _require = requireRelativeTo(path.replace(/[^\/]+$/,''));
-      if (!main) {
-        main = _module;
-      }
-      loadingModules[path] = true;
-      module(_require, _module.exports, _module);
-      module = modules[path] = _module;
-      delete loadingModules[path];
+    } else {
+      var module = modules[path];
+      continuation(undefined, module);
     }
-    return module;
   }
 
   function _moduleAtPath(path, fetchFunc, continuation) {
     var suffixes = ['', '.js', '/index.js'];
+    if (path.charAt(path.length - 1) == '/') {
+      suffixes = ['index.js'];
+    }
+
     var i = 0, ii = suffixes.length;
     var _find = function (i) {
       if (i < ii) {
         var path_ = path + suffixes[i];
         var after = function () {
-          var module = loadModule(path_);
-          if (module === null) {
-            _find(i + 1);
-          } else {
-            continuation(module);
-          }
+          loadModule(path_, function (error, module) {
+            if (error) {
+              continuation(error, module);
+            } else if (module === null) {
+              _find(i + 1);
+            } else {
+              continuation(undefined, module);
+            }
+          });
         }
 
-        if (!Object.prototype.hasOwnProperty.call(modules, path_)) {
+        if (!moduleIsDefined(path_)) {
           fetchFunc(path_, after);
         } else {
           after();
         }
 
       } else {
-        continuation(null);
+        continuation(undefined, null);
       }
     };
     _find(0);
   }
 
   function moduleAtPath(path, continuation) {
-    // Detect if this call, which has the potential to be
-    //  asynchrounously, is not completed synchronously.
-    var brokeSyncLock = true;
-    wrappedContinuation = function () {
-      brokeSyncLock = false;
-      continuation.apply(this, arguments);
+    var wrappedContinuation = function (error, module) {
+      if (error) {
+        if (error instanceof CircularDependencyError) {
+          // Are the conditions for deadlock satisfied or not?
+          // TODO: This and define's satisfy should use a common deferral
+          // mechanism.
+          setTimeout(function () {moduleAtPath(path, continuation)}, 0);
+        } else {
+          continuation(null);
+        }
+      } else {
+        continuation(module);
+      }
     };
-
     _moduleAtPath(path, fetchModule, wrappedContinuation);
-
-    if (syncLock && brokeSyncLock) {
-      throw new Error(
-          "Attempt to load module asnynchronously in a synchronous block.");
-    }
   }
 
   function moduleAtPathSync(path) {
-    _moduleAtPath(path, fetchModuleSync, function (m) {module = m});
+    var module;
+    var oldSyncLock = syncLock;
+    syncLock = true;
+    try {
+      _moduleAtPath(path, fetchModuleSync, function (error, _module) {
+        if (error) {
+          throw error;
+        } else {
+          module = _module
+        }
+      });
+    } finally {
+      syncLock = oldSyncLock;
+    }
     return module;
   }
 
-  /* Installation */
-  function installModule(path, module) {
+  /* Definition */
+  function moduleIsDefined(path) {
+    return hasOwnProperty(definitions, path);
+  }
+
+  function defineModule(path, module) {
     if (typeof path != 'string'
       || !((module instanceof Function) || module === null)) {
       throw new Error(
-          "Argument error: install must be given a (string, function) pair.");
+          "Argument error: define must be given a (string, function) pair.");
     }
 
-    if (Object.prototype.hasOwnProperty.call(modules, path)) {
+    if (moduleIsDefined(path)) {
       // Drop import silently
     } else {
-      modules[path] = module;
+      definitions[path] = module;
     }
   }
 
-  function installModules(moduleMap) {
+  function defineModules(moduleMap) {
     if (typeof moduleMap != 'object') {
-      throw new Error("Argument error: install must be given a object.");
+      throw new Error("Argument error: define must be given a object.");
     }
     for (var path in moduleMap) {
-      if (Object.prototype.hasOwnProperty.call(moduleMap, path)) {
-        installModule(path, moduleMap[path]);
+      if (hasOwnProperty(moduleMap, path)) {
+        defineModule(path, moduleMap[path]);
       }
     }
   }
 
-  function install(fullyQualifiedPathOrModuleMap, module) {
+  function define(fullyQualifiedPathOrModuleMap, module) {
     var moduleMap;
     if (arguments.length == 1) {
       moduleMap = fullyQualifiedPathOrModuleMap;
-      installModules(moduleMap);
+      defineModules(moduleMap);
     } else if (arguments.length == 2) {
       var path = fullyQualifiedPathOrModuleMap;
-      installModule(fullyQualifiedPathOrModuleMap, module);
+      defineModule(fullyQualifiedPathOrModuleMap, module);
       moduleMap = {};
       moduleMap[path] = module;
     } else {
@@ -347,21 +515,33 @@
           + arguments.length + ".");
     }
 
-    if (!syncLock) {
-      for (var path in moduleMap) {
-        if (Object.prototype.hasOwnProperty.call(moduleMap, path)
-          && Object.prototype.hasOwnProperty.call(installWaiters, path)) {
-          var continuations = installWaiters[path];
-          delete installWaiters[path];
-          for (var i = 0, ii = continuations.length; i < ii; i++) {
-            continuations[i]();
-          }
+    // With all modules installed satisfy those conditions for all waiters.
+    var continuations = [];
+    for (var path in moduleMap) {
+      if (hasOwnProperty(moduleMap, path)
+        && hasOwnProperty(definitionWaiters, path)) {
+        continuations.push.apply(continuations, definitionWaiters[path]);
+        delete definitionWaiters[path];
+      }
+    }
+    function satisfy() {
+      // Let exceptions happen, but don't allow them to break notification.
+      try {
+        while (continuations.length) {
+          var continuation = continuations.shift();
+          continuation();
         }
+      } finally {
+        continuations.length && setTimeout(satisfy, 0);
       }
-      if (Object.prototype.hasOwnProperty.call(moduleMap, installRequest)) {
-        installRequest = undefined;
-        continueScheduledFetchInstalls();
-      }
+    }
+
+    if (syncLock) {
+      // Only asynchronous operations will wait on this condition so schedule
+      // and don't interfere with the synchronous operation in progress.
+      setTimeout(continuations, 0);
+    } else {
+      satisfy(continuations);
     }
   }
 
@@ -377,7 +557,10 @@
       if (!(continuation instanceof Function)) {
         throw new Error("Argument Error: continuation must be a function.");
       }
-      moduleAtPath(path, function (module) {continuation(module.exports)});
+
+      moduleAtPath(path, function (module) {
+        continuation(module && module.exports);
+      });
     }
   }
 
@@ -391,6 +574,11 @@
     if (!(continuation instanceof Function)) {
       throw new Error("Final argument must be a continuation.");
     } else {
+      // Copy and validate parameters
+      var _qualifiedPaths = [];
+      for (var i = 0, ii = qualifiedPaths.length; i < ii; i++) {
+        _qualifiedPaths[i] = qualifiedPaths[i].toString();
+      }
       var results = [];
       function _require(result) {
         results.push(result);
@@ -400,7 +588,9 @@
           continuation.apply(this, results);
         }
       }
-      return requireRelative(basePath, qualifiedPaths.shift(), _require);
+      for (var i = 0, ii = qualifiedPaths.length; i < ii; i++) {
+        requireRelative(basePath, _qualifiedPaths[i], _require);
+      }
     }
   }
 
@@ -421,7 +611,9 @@
 
   var rootRequire = requireRelativeTo('/');
   rootRequire._modules = modules;
-  rootRequire.define = install;
+  rootRequire._definitions = definitions;
+  rootRequire.define = define;
+  rootRequire.setRequestMaximum = setRequestMaximum;
   rootRequire.setGlobalKeyPath = setGlobalKeyPath;
   rootRequire.setRootURI = setRootURI;
   rootRequire.setLibraryURI = setLibraryURI;
