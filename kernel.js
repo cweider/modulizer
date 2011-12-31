@@ -257,7 +257,7 @@
 
   function fetchDefineXHR(path, async) {
     // If cross domain and request doesn't support such requests, go straight
-    // to mirrioring.
+    // to mirroring.
 
     var _globalKeyPath = globalKeyPath;
 
@@ -300,8 +300,11 @@
       || document.getElementsByTagName('head')[0]
       || document.documentElement;
     var script = document.createElement('script');
-    script.async = "async";
-    script.defer = "defer";
+    if (script.async !== undefined) {
+      script.async = "true";
+    } else {
+      script.defer = "true";
+    }
     script.type = "application/javascript";
     script.src = URIForModulePath(path)
       + '?callback=' + encodeURIComponent(globalKeyPath + '.define');
@@ -346,7 +349,7 @@
       if (globalKeyPath
         && ((typeof document != undefined)
           && document.readyState && document.readyState != 'loading')) {
-        fetchDefineJSONP(fetchRequest)
+        fetchDefineJSONP(fetchRequest);
       } else {
         fetchDefineXHR(fetchRequest, true);
       }
@@ -539,7 +542,7 @@
     if (syncLock) {
       // Only asynchronous operations will wait on this condition so schedule
       // and don't interfere with the synchronous operation in progress.
-      setTimeout(continuations, 0);
+      setTimeout(function () {satisfy(continuations)}, 0);
     } else {
       satisfy(continuations);
     }
