@@ -3,11 +3,11 @@ var pathutil = require('path');
 var events = require('events');
 
 var kernelPath = pathutil.join(__dirname, 'kernel.js');
-var kernel = 'var require = '
+var kernel = '(function (XMLHttpRequest) {var require = '
   + fs.readFileSync(kernelPath, 'utf8')
-  + 'return require;';
+  + ';\nreturn require;})';
 
-var buildKernel = new Function('XMLHttpRequest', kernel);
+var buildKernel = require('vm').runInThisContext(kernel, kernelPath);
 var buildMockXMLHttpRequestClass = function (virtualPaths) {
   var emitter = new events.EventEmitter();
   var requestCount = 0;

@@ -133,6 +133,7 @@ if (options.kernel) {
     writeStream.write("var require = ", 'utf8');
   }
   writeStream.write(fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
+  writeStream.write(";\n", 'utf8');
 }
 
 var writeReport = function (error, paths) {
