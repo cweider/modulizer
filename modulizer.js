@@ -22,7 +22,7 @@
 
 var fs = require('fs');
 var pathutil = require('path');
-var asyncRequire = require('./async_require');
+var requireForPaths = require('./mock_require').requireForPaths;
 
 /* Convert a given system path to a path suitable for the module system. */
 function systemToModulePath(rootPath, libraryPath, path) {
@@ -180,7 +180,7 @@ function compile(rootPath, libraryPath, paths,
 
 /* Retrieve the depencies of the specified files. */
 function dependencies(rootPath, libraryPath, paths, callback) {
-  var mockRequire = asyncRequire.requireForPaths(rootPath, libraryPath);
+  var mockRequire = requireForPaths(rootPath, libraryPath);
 
   mockRequire.emitter.addListener('idle', function () {
     var modules = mockRequire._definitions;
