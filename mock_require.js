@@ -232,10 +232,10 @@ function requireForPaths(rootPath, libraryPath) {
   var MockXMLHttpRequest = buildMockXMLHttpRequestClass();
   var mockRequire = buildKernel(MockXMLHttpRequest);
 
-  if (typeof rootPath != undefined) {
+  if (rootPath !== undefined) {
     mockRequire.setRootURI(normalizePathAsURI(rootPath));
   }
-  if (typeof libraryPath != undefined) {
+  if (libraryPath != undefined) {
     mockRequire.setLibraryURI(normalizePathAsURI(libraryPath));
   }
 
