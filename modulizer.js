@@ -22,7 +22,8 @@
 
 var fs = require('fs');
 var pathutil = require('path');
-var requireForPaths = require('./mock_require').requireForPaths;
+
+var Analyzer = require("./analyzer").Analyzer
 
 /* Convert a given system path to a path suitable for the module system. */
 function systemToModulePath(rootPath, libraryPath, path) {
@@ -178,26 +179,6 @@ function compile(rootPath, libraryPath, paths,
   );
 }
 
-/* Retrieve the depencies of the specified files. */
-function dependencies(rootPath, libraryPath, paths, callback) {
-  var mockRequire = requireForPaths(rootPath, libraryPath);
-
-  mockRequire.emitter.addListener('idle', function () {
-    var modules = mockRequire._definitions;
-    var paths = [];
-    for (var path in modules) {
-      if (Object.prototype.hasOwnProperty.call(modules, path)) {
-        paths.push(path);
-      }
-    }
-    callback(paths);
-  });
-
-  paths.forEach(function (path) {
-    mockRequire(path, function () {});
-  });
-}
-
 /* All items in operand1 which are not in operand2. */
 function subtractSets(operand1, operand2) {
   var pathSet = {};
@@ -294,8 +275,12 @@ Modulizer.prototype = new function () {
           };
 
           if (configuration.importDependencies) {
-            dependencies(configuration.rootPath, configuration.libraryPath,
-              paths, compileEverything)
+            var analyzer = new Analyzer({
+                  rootPath: configuration.rootPath
+                , libraryPath: configuration.libraryPath
+                }
+              );
+            analyzer.getDependenciesOfPaths(paths, compileEverything);
           } else {
             compileEverything(paths);
           }
