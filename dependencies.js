@@ -23,12 +23,7 @@
 var fs = require('fs');
 var pathutil = require('path');
 
-var logStream = fs.createWriteStream('/tmp/cmds', {flags: 'w', encoding: 'utf8'});
-logStream.write(JSON.stringify(process.argv) + '\n');
-
 var args = process.argv.slice(2);
-
-
 
 // Get configuration
 var configuration = {};
