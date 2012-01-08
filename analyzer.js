@@ -39,7 +39,7 @@ function AnalyzerPrototype () {
     var outputPath =
         '/tmp/modulizer_dependencies_' + process.pid + '_' + (child_counter++);
 
-    var command = process.execPath; 
+    var command = process.execPath;
     var args = [DEPENDENCY_SCRIPT_PATH];
     if (this._rootPath) {
       args.push('--root');
@@ -63,8 +63,8 @@ function AnalyzerPrototype () {
       });
     });
   };
-  
 }
+
 AnalyzerPrototype.prototype = new EventEmitter();
 Analyzer.prototype = new AnalyzerPrototype();
 
