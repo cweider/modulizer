@@ -131,7 +131,7 @@ if (options.kernel) {
 
 var writeReport = function (error, paths) {
   if (reportPath) {
-    writeStream.write(paths.join('\n') + '\n', 'utf8');
+    fs.writeFileSync(reportPath, paths.join('\n') + '\n');
   }
 };
 
