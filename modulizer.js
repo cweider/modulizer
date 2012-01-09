@@ -70,48 +70,6 @@ function moduleToSystemPath(rootPath, libraryPath, path) {
   }
 }
 
-/* This is basically `find(1)`. */
-function find(paths, filter, callback) {
-  var queue = paths.concat([]);
-  var paths = [];
-
-  var _find = function () {
-    var path = queue.shift();
-    if (path === undefined) {
-      callback(undefined, paths);
-    } else {
-      fs.stat(path, function (error, stats) {
-        if (error) {
-          callback(new Error("Error importing " + path));
-        } else {
-          if (stats.isDirectory()) {
-            fs.readdir(path, function (error, files) {
-              if (error) {
-                callback(new Error("Could not read " + path));
-              } else {
-                var args = files.map(function (file) {
-                  return pathutil.join(path, file);
-                });
-                args.unshift(queue.length, 0);
-                queue.splice.apply(queue, args);
-                _find();
-              }
-            });
-          } else if (stats.isFile()) {
-            if (!filter || filter(path)) {
-              paths.push(path);
-            }
-            _find();
-          } else {
-            callback(new Error("Path is not a file or directory " + path));
-          }
-        }
-      });
-    }
-  }
-  _find();
-}
-
 /* Read each of the paths in serial. */
 function readEach(paths, onFile, complete) {
   var ii = paths.length
@@ -179,35 +137,11 @@ function compile(rootPath, libraryPath, paths,
   );
 }
 
-/* All items in operand1 which are not in operand2. */
-function subtractSets(operand1, operand2) {
-  var pathSet = {};
-  operand1.forEach(function (path) {
-    pathSet[path] = true;
-  });
-  operand2.forEach(function (path) {
-    if (Object.prototype.hasOwnProperty.call(pathSet, path)) {
-      delete pathSet[path];
-    }
-  });
-  paths = [];
-  for (var path in pathSet) {
-    if (Object.prototype.hasOwnProperty.call(pathSet, path)) {
-      paths.push(path);
-    }
-  }
-  return paths;
-}
 
 function Modulizer(configuration) {
   this._configuration = {
     'rootPath': null
   , 'libraryPath': null
-  , 'importLibrary': false
-  , 'importRoot': false
-  , 'importDependencies': false
-  , 'import': []
-  , 'exclude': []
   , 'globalKeyPath': undefined
   };
   for (var key in this._configuration) {
@@ -226,68 +160,47 @@ function Modulizer(configuration) {
   configuration.import = configuration.import || [];
 }
 Modulizer.prototype = new function () {
-  this.compile = function (writeStream, complete) {
+  this.systemToModulePaths = function (paths) {
     var configuration = this._configuration;
-
-    // Build list of files/directories to process
-    var paths = [];
-    if (configuration.importRoot && configuration.rootPath) {
-      paths.push(configuration.rootPath);
-    }
-    if (configuration.importRoot && configuration.libraryPath) {
-      paths.push(configuration.libraryPath);
-    }
-    paths = paths.concat(configuration.import);
-
-    find(paths,
-      function (path) {
-        if (pathutil.extname(path) == '.js') {
-          return true;
-        } else {
-          return false;
-        }
-      }
-    , function (error, paths) {
-        if (error) {
-          // no-op
-        } else {
-          // Convert to module paths.
-          paths = paths.map(function (path ) {
-            return systemToModulePath(
-                configuration.rootPath
-              , configuration.libraryPath
-              , path);
-          });
-
-          var compileEverything = function (paths) {
-            paths = subtractSets(paths, configuration.exclude);
-
-            compile(
-              configuration.rootPath
-            , configuration.libraryPath
-            , paths
-            , configuration.globalKeyPath
-            , writeStream
-            , function (error, paths) {
-                complete && complete(error, paths);
-              }
-            );
-          };
-
-          if (configuration.importDependencies) {
-            var analyzer = new Analyzer({
-                  rootPath: configuration.rootPath
-                , libraryPath: configuration.libraryPath
-                }
-              );
-            analyzer.getDependenciesOfPaths(paths, compileEverything);
-          } else {
-            compileEverything(paths);
-          }
-        }
+    return paths.map(function (path) {
+      return systemToModulePath(
+          configuration.rootPath
+        , configuration.libraryPath
+        , path);
+    });
+  };
+  this.moduleToSystemPaths = function (paths) {
+    var configuration = this._configuration;
+    return paths.map(function (path) {
+      return moduleToSystemPath(
+          configuration.rootPath
+        , configuration.libraryPath
+        , path);
+    });
+  };
+  this.dependencies = function (paths, callback) {
+    var configuration = this._configuration;
+    var analyzer = new Analyzer({
+        rootPath: configuration.rootPath
+      , libraryPath: configuration.libraryPath
       }
     );
+    analyzer.getDependenciesOfPaths(paths, callback);
   }
+  this.package = function (paths, writeStream, complete) {
+    var configuration = this._configuration;
+
+    compile(
+      configuration.rootPath
+    , configuration.libraryPath
+    , paths
+    , configuration.globalKeyPath
+    , writeStream
+    , function (error, paths) {
+        complete && complete(error, paths);
+      }
+    );
+  };
 }
 
 exports.Modulizer = Modulizer;

@@ -30,6 +30,9 @@ var breakForError = function (message) {
   process.exit(1);
 }
 
+var find = require('./utility').find;
+var subtractSets = require('./utility').subtractSets;
+
 var args = process.argv.slice(2);
 var arg;
 
@@ -109,6 +112,16 @@ while (arg = args.shift()) {
 options.import = importPaths;
 options.exclude = excludePaths;
 
+var paths = [];
+if (options.importRoot && options.rootPath) {
+  paths.push(options.rootPath);
+}
+if (options.importRoot && options.libraryPath) {
+  paths.push(options.libraryPath);
+}
+paths = paths.concat(options.import);
+
+
 var writeStream = process.stdout;
 if (options.kernel) {
   writeStream.write((options.globalKeyPath || "var require") + ' = ', 'utf8');
@@ -122,4 +135,22 @@ var writeReport = function (error, paths) {
   }
 };
 
-(new Modulizer(options)).compile(writeStream, writeReport);
+var modulizer = new Modulizer(options);
+find(paths,
+  function (path) {
+    return pathutil.extname(path) == '.js'
+  }
+, function (error, paths) {
+    paths = paths || [];
+    paths = modulizer.systemToModulePaths(paths);
+    paths = subtractSets(paths, options.exclude);
+    var package = function (paths) {
+      modulizer.package(paths, writeStream, writeReport)
+    };
+    if (options.importDependencies) {
+      modulizer.dependencies(paths, package);
+    } else {
+      package(paths);
+    }
+  }
+);
