@@ -96,6 +96,9 @@ while (arg = args.shift()) {
     case '--include-kernel':
       options.kernel = true;
       break;
+    case '--use-system-paths':
+      options.useSystemPaths = true;
+      break;
     default:
       breakForError("Unknown option: " + arg);
   }
@@ -116,6 +119,9 @@ function findPaths(callback) {
   }
   paths = paths.concat(options.import);
 
+  if (!options.useSystemPaths) {
+    paths = modulizer.moduleToSystemPaths(paths);
+  }
   find(paths,
     function (path) {
       return pathutil.extname(path) == '.js'
@@ -123,7 +129,11 @@ function findPaths(callback) {
   , function (error, paths) {
       paths = paths || [];
       paths = modulizer.systemToModulePaths(paths);
-      paths = subtractSets(paths, options.exclude);
+      if (options.useSystemPaths) {
+        paths = subtractSets(paths, systemToModulePaths(options.exclude));
+      } else {
+        paths = subtractSets(paths, options.exclude);
+      }
       callback(paths);
     }
   );
@@ -138,7 +148,9 @@ function getDependencies(callback) {
 if (cmd == 'dependencies') {
   findPaths(function (paths) {
     modulizer.dependencies(paths, function (paths) {
-      paths = modulizer.moduleToSystemPaths(paths);
+      if (options.useSystemPaths) {
+        paths = modulizer.moduleToSystemPaths(paths);
+      }
       process.stdout.write(paths.join('\n') + '\n');
     });
   });
