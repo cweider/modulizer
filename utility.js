@@ -37,7 +37,12 @@ function find(paths, filter, callback) {
     } else {
       fs.stat(path, function (error, stats) {
         if (error) {
-          callback(new Error("Error importing " + path));
+          if (error.code == 'ENOENT') {
+            paths.push(path); // Allow not existant files to pass through.
+            _find();
+          } else {
+            callback(new Error("Error importing " + path));
+          }
         } else {
           if (stats.isDirectory()) {
             fs.readdir(path, function (error, files) {

@@ -26,15 +26,12 @@ var pathutil = require('path');
 var Modulizer = require('./modulizer').Modulizer;
 
 var breakForError = function (message) {
-  process.stderr.write(message + '\n');
+  console.error(message + '\n');
   process.exit(1);
 }
 
 var find = require('./utility').find;
 var subtractSets = require('./utility').subtractSets;
-
-var args = process.argv.slice(2);
-var arg;
 
 var options = {};
 options.rootPath = process.cwd();
@@ -43,6 +40,10 @@ importPaths = [];
 excludePaths = [];
 reportPath = undefined;
 
+var cmd = process.argv[2];
+
+var args = process.argv.slice(3);
+var arg;
 while (arg = args.shift()) {
   if (arg.slice(0,2) != '--') {
     importPaths.push(args);
@@ -66,13 +67,6 @@ while (arg = args.shift()) {
         breakForError("Path must be provided for --root-path");
       }
       options.rootPath = arg;
-      break;
-    case '--report':
-      arg = args.shift();
-      if (!arg || arg == '--') {
-        breakForError("Path must be provided for --report");
-      }
-      reportPath = arg;
       break;
     case '--exclude':
       arg = args.shift();
@@ -99,9 +93,6 @@ while (arg = args.shift()) {
     case '--import-root':
       options.importRoot = true;
       break;
-    case '--import-dependencies':
-      options.importDependencies = true;
-      break;
     case '--include-kernel':
       options.kernel = true;
       break;
@@ -112,45 +103,59 @@ while (arg = args.shift()) {
 options.import = importPaths;
 options.exclude = excludePaths;
 
-var paths = [];
-if (options.importRoot && options.rootPath) {
-  paths.push(options.rootPath);
-}
-if (options.importRoot && options.libraryPath) {
-  paths.push(options.libraryPath);
-}
-paths = paths.concat(options.import);
-
-
-var writeStream = process.stdout;
-if (options.kernel) {
-  writeStream.write((options.globalKeyPath || "var require") + ' = ', 'utf8');
-  writeStream.write(fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
-  writeStream.write(";\n", 'utf8');
-}
-
-var writeReport = function (error, paths) {
-  if (reportPath) {
-    fs.writeFileSync(reportPath, paths.join('\n') + '\n');
-  }
-};
 
 var modulizer = new Modulizer(options);
-find(paths,
-  function (path) {
-    return pathutil.extname(path) == '.js'
+
+function findPaths(callback) {
+  var paths = [];
+  if (options.importRoot && options.rootPath) {
+    paths.push(options.rootPath);
   }
-, function (error, paths) {
-    paths = paths || [];
-    paths = modulizer.systemToModulePaths(paths);
-    paths = subtractSets(paths, options.exclude);
-    var package = function (paths) {
-      modulizer.package(paths, writeStream, writeReport)
-    };
-    if (options.importDependencies) {
-      modulizer.dependencies(paths, package);
-    } else {
-      package(paths);
+  if (options.importRoot && options.libraryPath) {
+    paths.push(options.libraryPath);
+  }
+  paths = paths.concat(options.import);
+
+  find(paths,
+    function (path) {
+      return pathutil.extname(path) == '.js'
     }
+  , function (error, paths) {
+      paths = paths || [];
+      paths = modulizer.systemToModulePaths(paths);
+      paths = subtractSets(paths, options.exclude);
+      callback(paths);
+    }
+  );
+}
+
+function getDependencies(callback) {
+  findPaths(function (paths) {
+    modulizer.dependencies(paths, callback);
+  });
+}
+
+if (cmd == 'dependencies') {
+  findPaths(function (paths) {
+    modulizer.dependencies(paths, function (paths) {
+      paths = modulizer.moduleToSystemPaths(paths);
+      process.stdout.write(paths.join('\n') + '\n');
+    });
+  });
+} else if (cmd == 'package') {
+  if (options.kernel) {
+    process.stdout.write(
+      (options.globalKeyPath || "var require") + ' = ', 'utf8');
+    process.stdout.write(
+      fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
+    process.stdout.write(";\n", 'utf8');
   }
-);
+
+  findPaths(function (paths) {
+    modulizer.package(paths, process.stdout);
+  });
+} else {
+  console.error("Unknown command " + JSON.stringify(cmd)
+    + " use 'package' or 'dependencies'");
+  process.exit(1);
+}

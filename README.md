@@ -15,7 +15,6 @@ The command line tools accepts the following arguments:
  * `--exclude`: Do not import the modules in the newline separated list specified.
  * `--global-key-path`: The global accessor for the module system, useful when namespacing. This is also the path at which the kernel is installed if specified. Defaults to `require`. 
  * `--include-kernel`: This prepends the output with a basic implementation of a CommonJS module loader.
- * `--report`: This writes a newline separated report of the included modules that can be used in combination with `--exclude`.
 
 ## License ##
 Released under zlib
