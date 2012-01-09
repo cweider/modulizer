@@ -1,6 +1,6 @@
 #!/bin/bash
 
-../../modulize --output /tmp/code.js --root-path ../root --library-path ../lib --import-dependencies --include-kernel -- ../root/main.js > /dev/null
+../../modulize --root-path ../root --library-path ../lib --import-dependencies --include-kernel -- ../root/main.js > /tmp/code.js
 cp /tmp/code.js /tmp/compiled.js
 echo "require('/main.js', function () {});" >> /tmp/compiled.js
 node /tmp/compiled.js > /tmp/actual.out

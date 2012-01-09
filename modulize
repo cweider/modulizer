@@ -64,13 +64,6 @@ while (arg = args.shift()) {
       }
       options.rootPath = arg;
       break;
-    case '--output':
-      arg = args.shift();
-      if (!arg || arg == '--') {
-        breakForError("Path must be provided for --ouput");
-      }
-      options.outputPath = arg;
-      break;
     case '--report':
       arg = args.shift();
       if (!arg || arg == '--') {
@@ -117,28 +110,15 @@ options.import = importPaths;
 options.exclude = excludePaths;
 
 var writeStream = process.stdout;
-if (options.outputPath) {
-  writeStream =
-    fs.createWriteStream(options.outputPath, {flags: 'w', encoding: 'utf8'});
-}
-writeStream.on('error', function () {
-  console.log("Could not write to output.");
-  process.exit(1);
-});
-
 if (options.kernel) {
-  if (options.globalKeyPath) {
-    writeStream.write(options.globalKeyPath + " = ", 'utf8');
-  } else {
-    writeStream.write("var require = ", 'utf8');
-  }
+  writeStream.write((options.globalKeyPath || "var require") + ' = ', 'utf8');
   writeStream.write(fs.readFileSync(pathutil.join(__dirname, 'kernel.js')));
   writeStream.write(";\n", 'utf8');
 }
 
 var writeReport = function (error, paths) {
   if (reportPath) {
-    fs.writeFileSync(reportPath, paths.join('\n') + '\n');
+    writeStream.write(paths.join('\n') + '\n', 'utf8');
   }
 };
 
