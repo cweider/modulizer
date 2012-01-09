@@ -77,7 +77,7 @@ while (arg = args.shift()) {
     case '--exclude':
       arg = args.shift();
       if (!arg || arg == '--') {
-        breakForError("Path must be provided for --report");
+        breakForError("Path must be provided for --exclude");
       }
       var paths = fs.readFileSync(arg, 'utf8')
         .replace(/\n\n+/, '\n')
@@ -89,7 +89,7 @@ while (arg = args.shift()) {
     case '--global-key-path':
       arg = args.shift();
       if (!arg || arg == '--') {
-        breakForError("Path must be provided for --report");
+        breakForError("Key must be provided for --global-key-path");
       }
       options.globalKeyPath = arg;
       break;
