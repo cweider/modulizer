@@ -117,11 +117,7 @@ function findPaths(callback) {
   if (options.importRoot && options.libraryPath) {
     paths.push(options.libraryPath);
   }
-  paths = paths.concat(options.import);
 
-  if (!options.useSystemPaths) {
-    paths = modulizer.moduleToSystemPaths(paths);
-  }
   find(paths,
     function (path) {
       return pathutil.extname(path) == '.js'
@@ -146,13 +142,11 @@ function getDependencies(callback) {
 }
 
 if (cmd == 'dependencies') {
-  findPaths(function (paths) {
-    modulizer.dependencies(paths, function (paths) {
-      if (options.useSystemPaths) {
-        paths = modulizer.moduleToSystemPaths(paths);
-      }
-      process.stdout.write(paths.join('\n') + '\n');
-    });
+  modulizer.dependencies(options.import, function (paths) {
+    if (options.useSystemPaths) {
+      paths = modulizer.moduleToSystemPaths(paths);
+    }
+    process.stdout.write(paths.join('\n') + '\n');
   });
 } else if (cmd == 'package') {
   if (options.kernel) {
@@ -163,9 +157,7 @@ if (cmd == 'dependencies') {
     process.stdout.write(";\n", 'utf8');
   }
 
-  findPaths(function (paths) {
-    modulizer.package(paths, process.stdout);
-  });
+  modulizer.package(paths, process.stdout);
 } else {
   console.error("Unknown command " + JSON.stringify(cmd)
     + " use 'package' or 'dependencies'");
