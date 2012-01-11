@@ -25,6 +25,33 @@ var pathutil = require('path');
 
 var Analyzer = require("./analyzer").Analyzer
 
+function hasOwnProperty(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+function uniq(list) {
+  var duplicate = false;
+  var map = {};
+  for (var i = 0, ii = list.length; i < ii; i++) {
+    if (!duplicate && hasOwnProperty(map, list[i])) {
+      duplicate = true;
+    }
+    map[list[i]] = true;
+  }
+
+  var uniqed_list;
+  if (!duplicate) {
+    uniqued_list = list;
+  } else {
+    uniqued_list = []
+    for (var key in map) {
+      if (hasOwnProperty(map, key)) {
+        uniqued_list.push(key);
+      }
+    }
+  }
+  return uniqued_list
+}
+
 /* Convert a given system path to a path suitable for the module system. */
 function systemToModulePath(rootPath, libraryPath, path) {
   path = pathutil.resolve(path);
@@ -187,6 +214,81 @@ Modulizer.prototype = new function () {
     );
     analyzer.getDependenciesOfPaths(paths, callback);
   }
+  this.cliques = function (paths, callback) {
+    /* Not efficient, probably, I think, meh */
+    var configuration = this._configuration;
+    var analyzer = new Analyzer({
+        rootPath: configuration.rootPath
+      , libraryPath: configuration.libraryPath
+      }
+    );
+
+    var pathCliqueMap = {};
+    var cliquePathMap = {};
+    function joinCliques(id1, id2, id3) {
+      var pathsToMove = [].concat(Array.prototype.slice.call(arguments, 1));
+      pathsToMove = uniq(pathsToMove);
+      Array.prototype.push.apply(cliquePathMap[id1], pathsToMove);
+      pathsToMove.forEach(function (path) {
+        pathCliqueMap[path] = id1;
+      });
+      return id1;
+    }
+
+    function addPathToClique(path, id) {
+      if (hasOwnProperty(pathCliqueMap, path)) {
+        if (pathCliqueMap[path] != id) {
+          throw new Error("Path already in clique "
+            + JSON.stringify(pathCliqueMap[path])
+            + " cannot be changed to "
+            + JSON.stringify(id) + ".");
+        } else {
+          // no-op, it is already correct.
+        }
+      } else {
+        cliquePathMap[id] = cliquePathMap[id] || [];
+        cliquePathMap[id].push(path);
+        pathCliqueMap[path] = id;
+      }
+    }
+
+    var queue = paths.concat();
+    var next = function () {
+      var path = queue.shift();
+      if (path) {
+        analyzer.getDependenciesOfPaths([path], function (paths) {
+          var cliques = [];
+          paths.forEach(function (path) {
+            if (hasOwnProperty(pathCliqueMap, path)) {
+              cliques.push(pathCliqueMap[path]);
+            }
+          });
+
+          var cliqueKey;
+          if (cliques.length > 0) {
+            cliqueKey = joinCliques.apply(this, cliques);
+          } else {
+            cliqueKey = path;
+          }
+
+          paths.forEach(function (path) {
+            addPathToClique(path, cliqueKey);
+          });
+          next();
+        });
+      } else {
+        var cliques = [];
+        for (var key in cliquePathMap) {
+          if (hasOwnProperty(cliquePathMap, key)) {
+            cliques.push(cliquePathMap[key]);
+          }
+        }
+        callback(undefined, cliques);
+      }
+    };
+
+    next();
+  };
   this.package = function (paths, writeStream, complete) {
     var configuration = this._configuration;
 

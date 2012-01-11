@@ -59,7 +59,8 @@ function AnalyzerPrototype () {
     child.stderr.on('data', function (data) {console && console.error(data)});
     child.on('exit', function (code, signal) {
       fs.readFile(outputPath, 'utf8', function (error, data) {
-        callback((data || path).split('\n'));
+        var paths = (data || path).split('\n');
+        callback(paths.filter(function (v) {return v}));
       });
     });
   };

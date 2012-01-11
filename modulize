@@ -87,17 +87,18 @@ while (arg = args.shift()) {
       }
       options.globalKeyPath = arg;
       break;
-    case '--import-library':
-      options.importLibrary = true;
-      break;
-    case '--import-root':
-      options.importRoot = true;
-      break;
     case '--include-kernel':
       options.kernel = true;
       break;
     case '--use-system-paths':
       options.useSystemPaths = true;
+      break;
+    case '--format':
+      arg = args.shift();
+      if (!arg || arg == '--') {
+        breakForError("Value must be provided for --format");
+      }
+      options.format = arg;
       break;
     default:
       breakForError("Unknown option: " + arg);
@@ -111,10 +112,10 @@ var modulizer = new Modulizer(options);
 
 function findPaths(callback) {
   var paths = [];
-  if (options.importRoot && options.rootPath) {
+  if (options.rootPath) {
     paths.push(options.rootPath);
   }
-  if (options.importRoot && options.libraryPath) {
+  if (options.libraryPath) {
     paths.push(options.libraryPath);
   }
 
@@ -158,6 +159,19 @@ if (cmd == 'dependencies') {
   }
 
   modulizer.package(paths, process.stdout);
+} else if (cmd == 'cliques') {
+  findPaths(function (paths) {
+    modulizer.cliques(paths, function (error, cliques) {
+      if (options.format == 'json') {
+        process.stdout.write(JSON.strigify(cliques), 'utf8');
+      } else {
+        cliques.forEach(function (clique) {
+          process.stdout.write(clique.sort().join(' '), 'utf8');
+          process.stdout.write("\n", 'utf8');
+        })
+      }
+    });
+  });
 } else {
   console.error("Unknown command " + JSON.stringify(cmd)
     + " use 'package' or 'dependencies'");
